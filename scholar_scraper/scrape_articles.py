@@ -57,6 +57,9 @@ def scrape_dblp(nom_chercheur):
     offset    = 0
     page_size = 100
     nom_query = normaliser(nom_chercheur)
+    
+    # Préparer les parties du nom pour vérification
+    nom_parts = [p.lower() for p in nom_chercheur.strip().split() if len(p) > 2]
 
     while True:
         try:
@@ -92,6 +95,15 @@ def scrape_dblp(nom_chercheur):
             if isinstance(authors_raw, dict):
                 authors_raw = [authors_raw]
             auteurs = ", ".join(a.get("text", "") for a in authors_raw)
+            
+            # Vérifier que le chercheur est bien dans les auteurs
+            auteurs_lower = auteurs.lower()
+            match_count = sum(1 for part in nom_parts if part in auteurs_lower)
+            # Exiger au moins 2 parties du nom dans les auteurs
+            if len(nom_parts) >= 2 and match_count < 2:
+                continue
+            elif len(nom_parts) == 1 and match_count < 1:
+                continue
 
             articles.append({
                 "titre"   : info.get("title", "").rstrip("."),

@@ -1,255 +1,690 @@
-import { useState, useEffect } from "react";
-import { FileBarChart, Download, Printer, Eye, Loader2, RefreshCw } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Download, RefreshCw, FileText, Users, BookOpen, Calendar,
+  Award, TrendingUp, ChevronDown, ChevronUp,
+} from "lucide-react";
 import { rapportApi } from "../../lib/api";
+import logoLarodec from "../../imports/image-1.png";
 
-const LAB_INFO = {
-  nom: "LARODEC",
-  denomination: "Recherche Opérationnelle, Aide à la Décision et Processus de Contrôle",
-  code: "LR01ES02",
-  universite: "UNIVERSITE DE TUNIS",
+const LAB = {
+  universite:    "UNIVERSITE DE TUNIS",
   etablissement: "INSTITUT SUPERIEUR DE GESTION DE TUNIS",
-  chef: "BEN ARFA RABAI Latifa",
-  grade: "Professeur d'Enseignement Supérieur",
-  email: "latifa.rabai@gmail.com",
-  siteWeb: "http://www.larodec.com",
+  denomination:  "Recherche Opérationnelle, Aide à la Décision et Processus de Contrôle",
+  code:          "LR01ES02",
+  chef:          "BEN ARFA RABAI Latifa",
+  grade:         "Professeur d'Enseignement Supérieur",
+  tel:           "0021698385982",
+  fax:           "21671588350",
+  email:         "latifa.rabai@gmail.com",
+  siteWeb:       "http://www.larodec.com/",
 };
 
-export function RapportAnnuel() {
-  const [selectedYear, setSelectedYear] = useState(2025);
-  const [showPreview, setShowPreview] = useState(false);
-  const [data, setData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
+const PRINT_CSS = `
+@media print {
+  body * { visibility: hidden !important; }
+  #rapport-pdf, #rapport-pdf * { visibility: visible !important; }
+  #rapport-pdf { position: fixed; top: 0; left: 0; width: 100%; z-index: 9999; background: white; }
+  .no-print { display: none !important; }
+  table { border-collapse: collapse !important; width: 100% !important; }
+  th, td { border: 1px solid #aaa !important; padding: 4px 6px !important; font-size: 9pt !important; }
+  th { background: #dde4f0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  h2.section-title { background: #1a3a6b !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @page { margin: 1.5cm; size: A4; }
+}
+`;
 
-  const load = async (year: number) => {
-    setIsLoading(true);
-    try {
-      const d = await rapportApi.get(year);
-      setData(d);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
+// ─── Editable field types ─────────────────────────────────────────────────────
+interface EditableFields {
+  reliquat_budget:        string;
+  brevets:                number;
+  obtentions_vegetales:   number;
+  habilitations:          number;
+  masteres_soutenus:      number;
+  articles_chapitres:     number;
+  projets_internationaux: number;
+  note_directeur:         string;
+  perspectives:           string;
+}
+
+const DEFAULT_EDITABLE: EditableFields = {
+  reliquat_budget:        "0",
+  brevets:                0,
+  obtentions_vegetales:   0,
+  habilitations:          0,
+  masteres_soutenus:      0,
+  articles_chapitres:     0,
+  projets_internationaux: 0,
+  note_directeur:         "",
+  perspectives:           "",
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function Th({ children }: { children: React.ReactNode }) {
+  return <th style={{ background: "#dde4f0", border: "1px solid #aaa", padding: "5px 8px", textAlign: "left", fontSize: "11px", fontWeight: 700 }}>{children}</th>;
+}
+function Td({ children, center }: { children?: React.ReactNode; center?: boolean }) {
+  return <td style={{ border: "1px solid #ccc", padding: "4px 8px", fontSize: "11px", textAlign: center ? "center" : "left", verticalAlign: "top" }}>{children ?? "—"}</td>;
+}
+
+// ─── Editable number inline ───────────────────────────────────────────────────
+function EditableNumber({ fieldKey, value, onUpdate }: {
+  fieldKey: string; value: number; onUpdate: (k: string, v: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [local, setLocal]     = useState(String(value));
+
+  useEffect(() => { setLocal(String(value)); }, [value]);
+
+  const commit = () => { onUpdate(fieldKey, Number(local)); setEditing(false); };
+
+  return editing ? (
+    <input type="number" value={local}
+      onChange={e => setLocal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
+      autoFocus
+      className="w-20 text-center font-bold border-2 border-blue-400 rounded-lg px-2 py-1 text-sm outline-none" />
+  ) : (
+    <motion.span whileHover={{ scale: 1.05 }} onClick={() => setEditing(true)}
+      className="font-bold text-blue-700 cursor-pointer hover:bg-blue-50 px-2 py-1 rounded-lg border border-dashed border-blue-200 transition-all inline-flex items-center gap-1"
+      title="Cliquer pour modifier">
+      {value}<span className="text-xs text-blue-400">✏️</span>
+    </motion.span>
+  );
+}
+
+// ─── Editable text ────────────────────────────────────────────────────────────
+function EditableText({ fieldKey, value, onUpdate, placeholder }: {
+  fieldKey: string; value: string; onUpdate: (k: string, v: string) => void; placeholder: string;
+}) {
+  return (
+    <textarea value={value} onChange={e => onUpdate(fieldKey, e.target.value)}
+      placeholder={placeholder} rows={3}
+      className="w-full text-sm border border-gray-200 rounded-xl p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none bg-gray-50 focus:bg-white transition-all" />
+  );
+}
+
+// ─── Collapsible Section ──────────────────────────────────────────────────────
+function Section({ title, icon: Icon, count, children, defaultOpen = true }: {
+  title: string; icon: React.ElementType; count?: number;
+  children: React.ReactNode; defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+      className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden mb-4">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 bg-blue-50 rounded-xl flex items-center justify-center">
+            <Icon className="w-4 h-4 text-blue-600" />
+          </div>
+          <span className="font-bold text-slate-900">{title}</span>
+          {count !== undefined && (
+            <span className="px-2.5 py-0.5 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">{count}</span>
+          )}
+        </div>
+        {open ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }}
+            className="overflow-hidden">
+            <div className="px-6 pb-5 pt-1">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+// ─── PDF Document (hidden, used for print) ────────────────────────────────────
+function PdfDocument({ data, year, editableFields }: { data: any; year: number; editableFields: EditableFields }) {
+  const eq    = data.equipe || {};
+  const prod  = data.production || {};
+  const ouv   = data.ouverture || {};
+  const listes = data.listes || {};
+
+  const resumeRows = [
+    { section: "I- Ressources Humaines et espace de recherche", isHeader: true },
+    { label: "I-1 Enseignants-chercheurs du corps A",                                    value: eq.corps_a || 0 },
+    { label: "I-2 Enseignants-chercheurs du corps B",                                    value: eq.corps_b || 0 },
+    { label: "I-3 Doctorants",                                                           value: eq.doctorants || 0 },
+    { label: "I-4 Etudiants",                                                            value: eq.masters || 0 },
+    { label: "I-5 Cadres ayant un grade équivalent au grade d'assistant",                value: eq.post_doc || 0 },
+    { section: "II- Production scientifique", isHeader: true },
+    { label: `II-1 Publications impactées parues en ${year} (JCR)`,                     value: prod.publications_jcr || 0 },
+    { label: `II-2 Ouvrages scientifiques édités en ${year}`,                           value: prod.ouvrages || 0 },
+    { label: `II-3 Articles et chapitres d'ouvrage édités en ${year}`,                  value: editableFields.articles_chapitres },
+    { label: `II-4 Brevets d'invention déposés en ${year}`,                             value: editableFields.brevets },
+    { label: `II-5 Obtentions végétales enregistrées en ${year}`,                       value: editableFields.obtentions_vegetales },
+    { label: `II-6 Habilitations universitaires soutenues en ${year}`,                  value: editableFields.habilitations },
+    { label: `II-7 Thèses de doctorat soutenues en ${year}`,                            value: prod.theses || 0 },
+    { label: `II-8 Mastères soutenues en ${year}`,                                      value: editableFields.masteres_soutenus },
+    { section: "III- Ouverture sur l'environnement", isHeader: true },
+    { label: `III-1 Séminaires, journées et ateliers organisés en ${year}`,             value: ouv.seminaires || 0 },
+    { label: `III-2 Conventions signées en ${year}`,                                    value: ouv.conventions || 0 },
+    { label: `III-3 Conventions et projets de coopération internationale en ${year}`,   value: editableFields.projets_internationaux },
+    { section: "IV- Reliquat du budget", isHeader: true },
+    { label: "IV- Reliquat du budget (montant en dinars)",                               value: editableFields.reliquat_budget },
+  ];
+
+  const s = { fontFamily: "Arial, sans-serif", color: "#222", fontSize: "12px", lineHeight: "1.6" };
+  const tableStyle = { width: "100%", borderCollapse: "collapse" as const, marginBottom: "16px" };
+
+  return (
+    <div id="rapport-pdf" style={{ ...s, padding: "20px", background: "white", display: "none" }}>
+      {/* Cover */}
+      <div style={{ textAlign: "center", borderBottom: "2px solid #1a3a6b", paddingBottom: "24px", marginBottom: "24px" }}>
+        <div style={{ fontWeight: 700, fontSize: "14px" }}>REPUBLIQUE TUNISIENNE</div>
+        <div style={{ fontSize: "13px", margin: "4px 0" }}>Ministère de l'Enseignement Supérieur et de la Recherche Scientifique</div>
+        <div style={{ fontSize: "13px", marginBottom: "20px" }}>Direction Générale de la Recherche Scientifique</div>
+        <div style={{ border: "2px solid #1a3a6b", display: "inline-block", padding: "14px 40px", margin: "10px auto" }}>
+          <div style={{ fontSize: "20px", fontWeight: 900, color: "#1a3a6b", letterSpacing: "1px" }}>RAPPORT D'ACTIVITES {year}</div>
+        </div>
+        <div style={{ textAlign: "left", marginTop: "24px", lineHeight: "2.2" }}>
+          <div><strong>Université:</strong> {LAB.universite}</div>
+          <div><strong>Etablissement:</strong> {LAB.etablissement}</div>
+          <div><strong>Dénomination LR/UR:</strong> {LAB.denomination}</div>
+          <div><strong>Code structure:</strong> {LAB.code}</div>
+          <div><strong>Chef LR/UR:</strong> {LAB.chef} — {LAB.grade}</div>
+          <div><strong>Tél:</strong> {LAB.tel} &nbsp; <strong>Fax:</strong> {LAB.fax}</div>
+          <div><strong>E-mail:</strong> {LAB.email} &nbsp; <strong>Site:</strong> {LAB.siteWeb}</div>
+        </div>
+      </div>
+
+      {/* Résumé */}
+      <h2 className="section-title" style={{ background: "#1a3a6b", color: "white", padding: "7px 12px", fontSize: "13px", fontWeight: 700, margin: "20px 0 10px" }}>RESUME DU RAPPORT {year}</h2>
+      <table style={tableStyle}>
+        <thead><tr><Th>Rubrique</Th><Th>Nombre</Th></tr></thead>
+        <tbody>
+          {resumeRows.map((row, i) => (row as any).isHeader ? (
+            <tr key={i}><td colSpan={2} style={{ background: "#e8eef8", fontWeight: 700, padding: "6px 10px", fontSize: "12px", border: "1px solid #ccc" }}>{(row as any).section}</td></tr>
+          ) : (
+            <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#f9f9f9" }}>
+              <Td>{(row as any).label}</Td><Td center>{(row as any).value}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* I. Équipe */}
+      <h2 className="section-title" style={{ background: "#1a3a6b", color: "white", padding: "7px 12px", fontSize: "13px", fontWeight: 700, margin: "20px 0 10px" }}>I- Composition de l'équipe de recherche ({year})</h2>
+      {[
+        { label: "Corps A", list: listes.chercheurs_a, cols: ["grade","nom_prenom","n_cin","etablissement","universite"] },
+        { label: "Corps B", list: listes.chercheurs_b, cols: ["grade","nom_prenom","n_cin","etablissement","universite"] },
+        { label: "Doctorants", list: listes.doctorants, cols: ["nom_prenom","n_cin","etablissement","universite"] },
+        { label: "Post-Doctorants", list: listes.post_doc, cols: ["grade","nom_prenom","n_cin","etablissement","universite"] },
+        { label: "Etudiants en mastère de recherche", list: listes.masters, cols: ["nom_prenom","n_cin","etablissement","universite"] },
+      ].map(({ label, list, cols }) => (
+        <div key={label}>
+          <p style={{ fontWeight: 700, marginBottom: "6px" }}>{label}</p>
+          <table style={tableStyle}>
+            <thead><tr>{cols.map(c => <Th key={c}>{c.replace("_"," ")}</Th>)}</tr></thead>
+            <tbody>{(list || []).map((r: any, i: number) => (
+              <tr key={i} style={{ background: i%2===0?"#fff":"#f5f7fb" }}>
+                {cols.map(c => <Td key={c}>{r[c]}</Td>)}
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ))}
+
+      {/* II. Production */}
+      <h2 className="section-title" style={{ background: "#1a3a6b", color: "white", padding: "7px 12px", fontSize: "13px", fontWeight: 700, margin: "20px 0 10px" }}>II- Production scientifique {year}</h2>
+      <table style={tableStyle}>
+        <thead><tr><Th>Titre</Th><Th>Journal</Th><Th>Année</Th><Th>Indexation</Th><Th>Auteurs</Th></tr></thead>
+        <tbody>{(listes.publications || []).map((p: any, i: number) => (
+          <tr key={i} style={{ background: i%2===0?"#fff":"#f5f7fb" }}>
+            <Td>{p.titre}</Td><Td>{p.journal_ou_editeur}</Td><Td center>{p.annee}</Td>
+            <Td center>{p.indexation || p.source_scraping}</Td><Td>{p.auteurs}</Td>
+          </tr>
+        ))}</tbody>
+      </table>
+
+      {/* Note directeur */}
+      {editableFields.note_directeur && (
+        <>
+          <h2 className="section-title" style={{ background: "#1a3a6b", color: "white", padding: "7px 12px", fontSize: "13px", fontWeight: 700, margin: "20px 0 10px" }}>Note du Directeur</h2>
+          <p style={{ fontSize: "12px", lineHeight: "1.8", whiteSpace: "pre-wrap" }}>{editableFields.note_directeur}</p>
+        </>
+      )}
+      {editableFields.perspectives && (
+        <>
+          <h2 className="section-title" style={{ background: "#1a3a6b", color: "white", padding: "7px 12px", fontSize: "13px", fontWeight: 700, margin: "20px 0 10px" }}>Perspectives {year + 1}</h2>
+          <p style={{ fontSize: "12px", lineHeight: "1.8", whiteSpace: "pre-wrap" }}>{editableFields.perspectives}</p>
+        </>
+      )}
+
+      <p style={{ textAlign: "center", fontSize: "10px", color: "#888", marginTop: "30px", borderTop: "1px solid #ddd", paddingTop: "10px" }}>
+        Rapport d'activités {year} — LARODEC — {LAB.etablissement}
+      </p>
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+export function RapportAnnuel() {
+  const [year, setYear]       = useState(2025);
+  const [data, setData]       = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+  const [showSaveToast, setShowSaveToast] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [editableFields, setEditableFields] = useState<EditableFields>(DEFAULT_EDITABLE);
+
+  // Load editable fields from localStorage when year changes
+  useEffect(() => {
+    const saved = localStorage.getItem(`rapport_editable_${year}`);
+    if (saved) {
+      try { setEditableFields(JSON.parse(saved)); }
+      catch { setEditableFields(DEFAULT_EDITABLE); }
+    } else {
+      setEditableFields(DEFAULT_EDITABLE);
+    }
+  }, [year]);
+
+  // Persist editable fields to localStorage
+  useEffect(() => {
+    localStorage.setItem(`rapport_editable_${year}`, JSON.stringify(editableFields));
+  }, [editableFields, year]);
+
+  const updateField = (key: string, value: any) => {
+    setEditableFields(prev => ({ ...prev, [key]: value }));
+    // Show toast
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setShowSaveToast(true);
+    toastTimer.current = setTimeout(() => setShowSaveToast(false), 2500);
+  };
+
+  // Inject print CSS once
+  useEffect(() => {
+    const id = "rapport-print-css";
+    if (!document.getElementById(id)) {
+      const s = document.createElement("style");
+      s.id = id; s.textContent = PRINT_CSS;
+      document.head.appendChild(s);
+    }
+  }, []);
+
+  const load = async (y: number) => {
+    setLoading(true);
+    try { const d = await rapportApi.get(y); setData(d); }
+    catch (e) { console.error(e); setData(null); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(year); }, [year]);
+
+  const handleDownload = () => {
+    if (!data) return;
+    setDownloading(true);
+    const el = document.getElementById("rapport-pdf");
+    if (el) {
+      el.style.display = "block";
+      setTimeout(() => { window.print(); el.style.display = "none"; setDownloading(false); }, 300);
+    } else {
+      window.print(); setDownloading(false);
     }
   };
 
-  useEffect(() => { load(selectedYear); }, [selectedYear]);
+  const handleReset = () => {
+    if (confirm("Réinitialiser tous les champs manuels de ce rapport ?")) {
+      localStorage.removeItem(`rapport_editable_${year}`);
+      setEditableFields(DEFAULT_EDITABLE);
+    }
+  };
 
-  const handlePrint = () => window.print();
+  const eq    = data?.equipe || {};
+  const prod  = data?.production || {};
+  const ouv   = data?.ouverture || {};
+  const listes = data?.listes || {};
+
+  const kpis = [
+    { icon: Users,      label: "Corps A",      value: eq.corps_a || 0,           color: "blue"    },
+    { icon: Users,      label: "Corps B",       value: eq.corps_b || 0,           color: "cyan"    },
+    { icon: Award,      label: "Doctorants",    value: eq.doctorants || 0,        color: "purple"  },
+    { icon: BookOpen,   label: "Publications",  value: prod.publications_jcr || 0, color: "emerald" },
+    { icon: TrendingUp, label: "Thèses",        value: prod.theses || 0,          color: "amber"   },
+    { icon: Calendar,   label: "Séminaires",    value: ouv.seminaires || 0,       color: "rose"    },
+  ];
+
+  // Resume rows for web display
+  const resumeRows: Array<{
+    section?: string; isHeader?: boolean;
+    label?: string; value?: any; fromDB?: boolean;
+    fieldKey?: keyof EditableFields; isText?: boolean;
+  }> = [
+    { section: "I- Ressources Humaines", isHeader: true },
+    { label: "I-1 Enseignants-chercheurs du corps A",  value: eq.corps_a || 0,   fromDB: true },
+    { label: "I-2 Enseignants-chercheurs du corps B",  value: eq.corps_b || 0,   fromDB: true },
+    { label: "I-3 Doctorants",                         value: eq.doctorants || 0, fromDB: true },
+    { label: "I-4 Etudiants Mastère",                  value: eq.masters || 0,    fromDB: true },
+    { label: "I-5 Cadres Post-Doc",                    value: eq.post_doc || 0,   fromDB: true },
+    { section: "II- Production scientifique", isHeader: true },
+    { label: `II-1 Publications JCR parues en ${year}`,       value: prod.publications_jcr || 0, fromDB: true },
+    { label: `II-2 Ouvrages scientifiques édités en ${year}`, value: prod.ouvrages || 0,         fromDB: true },
+    { label: `II-3 Articles et chapitres en ${year}`,         value: editableFields.articles_chapitres, fieldKey: "articles_chapitres", fromDB: false },
+    { label: `II-4 Brevets d'invention déposés en ${year}`,   value: editableFields.brevets,            fieldKey: "brevets",            fromDB: false },
+    { label: `II-5 Obtentions végétales en ${year}`,          value: editableFields.obtentions_vegetales, fieldKey: "obtentions_vegetales", fromDB: false },
+    { label: `II-6 Habilitations universitaires en ${year}`,  value: editableFields.habilitations,      fieldKey: "habilitations",      fromDB: false },
+    { label: `II-7 Thèses de doctorat soutenues en ${year}`,  value: prod.theses || 0,           fromDB: true },
+    { label: `II-8 Mastères soutenues en ${year}`,            value: editableFields.masteres_soutenus,  fieldKey: "masteres_soutenus",  fromDB: false },
+    { section: "III- Ouverture sur l'environnement", isHeader: true },
+    { label: `III-1 Séminaires organisés en ${year}`,         value: ouv.seminaires || 0,        fromDB: true },
+    { label: `III-2 Conventions signées en ${year}`,          value: ouv.conventions || 0,       fromDB: true },
+    { label: `III-3 Projets coopération internationale`,       value: editableFields.projets_internationaux, fieldKey: "projets_internationaux", fromDB: false },
+    { section: "IV- Reliquat du budget", isHeader: true },
+    { label: "IV- Reliquat du budget (montant en dinars)",     value: editableFields.reliquat_budget, fieldKey: "reliquat_budget", fromDB: false, isText: true },
+  ];
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Rapport Annuel d'Évaluation</h1>
-          <p className="text-gray-600">Données en temps réel depuis la base de données</p>
-        </div>
-        <button onClick={() => load(selectedYear)} className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50">
-          <RefreshCw className="w-4 h-4" /> Actualiser
-        </button>
-      </div>
+    <div className="min-h-screen bg-slate-50 p-6">
+      {/* Hidden PDF element */}
+      {data && <PdfDocument data={data} year={year} editableFields={editableFields} />}
 
-      {/* Year selector */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-        <label className="block text-sm font-medium text-gray-700 mb-3">Sélectionner l'année</label>
-        <div className="flex gap-2">
-          {[2023, 2024, 2025, 2026].map(year => (
-            <button key={year} onClick={() => setSelectedYear(year)}
-              className={`px-6 py-3 rounded-lg font-medium transition-all ${selectedYear === year ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}>
-              {year}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {isLoading ? (
-        <div className="flex justify-center p-16"><Loader2 className="w-8 h-8 text-blue-600 animate-spin" /></div>
-      ) : data ? (
-        <>
-          {/* Stats overview */}
-          <div className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl p-8 text-white mb-6">
-            <h2 className="text-2xl font-bold mb-6">Statistiques {selectedYear}</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <h3 className="text-sm opacity-80 mb-3 font-semibold uppercase tracking-wide">Équipe de recherche</h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span>Corps A (Professeurs & MC)</span><span className="font-bold">{data.equipe.corps_a}</span></div>
-                  <div className="flex justify-between"><span>Corps B (Maîtres Assistants)</span><span className="font-bold">{data.equipe.corps_b}</span></div>
-                  <div className="flex justify-between"><span>Doctorants</span><span className="font-bold">{data.equipe.doctorants}</span></div>
-                  <div className="flex justify-between"><span>Masters Recherche</span><span className="font-bold">{data.equipe.masters}</span></div>
-                  <div className="flex justify-between border-t border-white/20 pt-2 mt-2"><span className="font-semibold">Total</span><span className="font-bold">{data.equipe.corps_a + data.equipe.corps_b + data.equipe.doctorants + data.equipe.masters}</span></div>
-                </div>
-              </div>
-              <div>
-                <h3 className="text-sm opacity-80 mb-3 font-semibold uppercase tracking-wide">Production scientifique</h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span>Publications {selectedYear}</span><span className="font-bold">{data.production.publications_jcr}</span></div>
-                  <div className="flex justify-between"><span>Total cumulé</span><span className="font-bold">{data.production.publications_total}</span></div>
-                  <div className="flex justify-between"><span>Ouvrages</span><span className="font-bold">{data.production.ouvrages}</span></div>
-                  <div className="flex justify-between"><span>Thèses soutenues</span><span className="font-bold">{data.production.theses}</span></div>
-                </div>
-              </div>
-              <div>
-                <h3 className="text-sm opacity-80 mb-3 font-semibold uppercase tracking-wide">Ouverture</h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span>Séminaires & Ateliers</span><span className="font-bold">{data.ouverture.seminaires}</span></div>
-                  <div className="flex justify-between"><span>Conventions</span><span className="font-bold">{data.ouverture.conventions}</span></div>
-                  <div className="flex justify-between"><span>Projets Intl.</span><span className="font-bold">{data.ouverture.projets_internationaux}</span></div>
-                </div>
-              </div>
+      {/* ── Hero ── */}
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
+        className="relative overflow-hidden rounded-3xl mb-6 bg-gradient-to-br from-blue-700 via-blue-600 to-cyan-600 p-8">
+        <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute -top-10 -right-10 w-48 h-48 bg-white/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute inset-0 opacity-[0.04]"
+          style={{ backgroundImage: "linear-gradient(white 1px,transparent 1px),linear-gradient(90deg,white 1px,transparent 1px)", backgroundSize: "28px 28px" }} />
+        <div className="relative flex items-center justify-between flex-wrap gap-6">
+          <div className="flex items-center gap-5">
+            <div className="relative w-16 h-16 bg-white/15 backdrop-blur-sm rounded-2xl flex items-center justify-center border border-white/30 shadow-xl">
+              <img src={logoLarodec} alt="LARODEC" className="w-10 h-10 object-contain" />
+            </div>
+            <div>
+              <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-1">LARODEC — ISG Tunis</p>
+              <h1 className="text-3xl font-black text-white mb-1">Rapport d'Activités</h1>
+              <p className="text-blue-100/80 text-sm">Génération automatique depuis la base de données</p>
             </div>
           </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <button onClick={() => load(year)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-white/15 hover:bg-white/25 text-white rounded-xl text-sm font-semibold border border-white/20 transition-all">
+              <RefreshCw className="w-4 h-4" /> Actualiser
+            </button>
+            <button onClick={handleReset}
+              className="flex items-center gap-2 px-4 py-2.5 bg-white/15 hover:bg-white/25 text-white rounded-xl text-sm font-medium border border-white/20 transition-all">
+              <RefreshCw className="w-4 h-4" /> Réinitialiser
+            </button>
+            <motion.button onClick={handleDownload} disabled={!data || downloading}
+              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-white text-blue-700 rounded-xl text-sm font-bold shadow-lg hover:shadow-xl transition-all disabled:opacity-50">
+              {downloading
+                ? <><motion.div animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}><RefreshCw className="w-4 h-4" /></motion.div> Génération...</>
+                : <><Download className="w-4 h-4" /> Télécharger PDF</>}
+            </motion.button>
+          </div>
+        </div>
+      </motion.div>
 
-          {/* Sources breakdown */}
-          {data.production.par_source?.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-              <h2 className="text-lg font-bold text-gray-900 mb-4">Répartition par source de scraping</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {data.production.par_source.map((s: any) => (
-                  <div key={s.source_scraping} className="text-center p-4 bg-gray-50 rounded-lg">
-                    <p className="text-2xl font-bold text-gray-900">{s.total}</p>
-                    <p className="text-xs text-gray-500 mt-1">{s.source_scraping || "Manuel"}</p>
+      {/* ── Year selector ── */}
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+        className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-4">
+        <p className="text-sm font-bold text-slate-600 mb-4">Sélectionner l'année du rapport</p>
+        <div className="flex gap-3 flex-wrap">
+          {[2023, 2024, 2025, 2026].map(y => (
+            <motion.button key={y} onClick={() => setYear(y)}
+              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.97 }}
+              className={`px-8 py-3 rounded-xl font-bold text-sm transition-all ${y === year ? "bg-blue-600 text-white shadow-md shadow-blue-200" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+              {y}
+            </motion.button>
+          ))}
+        </div>
+      </motion.div>
+
+      {/* ── Live data banner ── */}
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
+        className="flex items-center gap-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl mb-6 text-sm">
+        <motion.span animate={{ opacity: [1, 0.4, 1] }} transition={{ duration: 1.5, repeat: Infinity }}
+          className="w-2.5 h-2.5 bg-emerald-500 rounded-full flex-shrink-0" />
+        <span className="text-emerald-800 font-medium">Données récupérées en temps réel depuis la base de données LARODEC</span>
+        <span className="ml-auto text-emerald-600 text-xs hidden sm:block">
+          Champs <span className="font-bold">éditable</span> peuvent être modifiés avant impression
+        </span>
+      </motion.div>
+
+      {/* ── Loading / Content ── */}
+      <AnimatePresence mode="wait">
+        {loading ? (
+          <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <motion.div key={i} animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.1 }}
+                className="bg-white rounded-2xl border border-slate-100 p-6 h-28" />
+            ))}
+          </motion.div>
+        ) : data ? (
+          <motion.div key="content" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            {/* KPI Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+              {kpis.map((k, i) => (
+                <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.07 }} whileHover={{ y: -4, scale: 1.04 }}
+                  className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 text-center">
+                  <div className={`w-10 h-10 bg-${k.color}-50 rounded-xl flex items-center justify-center mx-auto mb-3`}>
+                    <k.icon className={`w-5 h-5 text-${k.color}-600`} />
+                  </div>
+                  <p className={`text-2xl font-black text-${k.color}-600`}>{k.value}</p>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">{k.label}</p>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* ── Résumé tableau éditable ── */}
+            <Section title="Résumé du Rapport" icon={FileText}>
+              <div className="overflow-x-auto rounded-xl border border-slate-100">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-4 py-2.5 text-left font-semibold text-slate-500">Rubrique</th>
+                      <th className="px-4 py-2.5 text-center font-semibold text-slate-500 w-40">Valeur</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {resumeRows.map((row, i) => {
+                      if (row.isHeader) {
+                        return (
+                          <tr key={i}>
+                            <td colSpan={2} className="px-4 py-2 bg-slate-100 font-bold text-slate-700 text-xs uppercase tracking-wide">
+                              {row.section}
+                            </td>
+                          </tr>
+                        );
+                      }
+                      return (
+                        <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
+                          <td className="px-4 py-2.5 text-slate-700 flex items-center gap-2">
+                            {row.label}
+                            {!row.fromDB && (
+                              <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-500 rounded font-medium">éditable</span>
+                            )}
+                            {row.fromDB && (
+                              <span className="text-[10px] px-1.5 py-0.5 bg-green-50 text-green-600 rounded font-medium">BDD auto</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            {row.fromDB ? (
+                              <span className="font-bold text-slate-900">{row.value}</span>
+                            ) : row.isText ? (
+                              <input type="text" value={String(row.value)}
+                                onChange={e => updateField(row.fieldKey as string, e.target.value)}
+                                className="text-center font-bold border border-dashed border-blue-300 rounded-lg px-2 py-1 text-sm w-36 focus:outline-none focus:border-blue-500 bg-blue-50/30" />
+                            ) : (
+                              <EditableNumber
+                                fieldKey={row.fieldKey as string}
+                                value={Number(row.value)}
+                                onUpdate={updateField} />
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
+
+            {/* ── Équipe ── */}
+            <Section title="I. Équipe de recherche" icon={Users}
+              count={(eq.corps_a||0)+(eq.corps_b||0)+(eq.doctorants||0)+(eq.masters||0)+(eq.post_doc||0)}>
+              <div className="space-y-4">
+                {[
+                  { label: "Corps A — Professeurs & MC",  list: listes.chercheurs_a, cols: ["grade","nom_prenom","n_cin","etablissement","universite"] },
+                  { label: "Corps B — Maîtres Assistants", list: listes.chercheurs_b, cols: ["grade","nom_prenom","n_cin","etablissement","universite"] },
+                  { label: "Doctorants",                   list: listes.doctorants,   cols: ["nom_prenom","n_cin","etablissement","universite"] },
+                  { label: "Post-Doctorants",              list: listes.post_doc,     cols: ["grade","nom_prenom","n_cin","etablissement","universite"] },
+                  { label: "Etudiants Mastère",            list: listes.masters,      cols: ["nom_prenom","n_cin","etablissement","universite"] },
+                ].map(({ label, list, cols }) => (
+                  <div key={label}>
+                    <p className="text-sm font-bold text-slate-700 mb-2">{label} <span className="text-blue-600">({(list||[]).length})</span></p>
+                    <div className="overflow-x-auto rounded-xl border border-slate-100">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50">
+                          <tr>{cols.map(c => <th key={c} className="px-3 py-2 text-left font-semibold text-slate-500 uppercase tracking-wide">{c.replace("_"," ")}</th>)}</tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {(list||[]).slice(0,5).map((r: any, i: number) => (
+                            <tr key={i} className="hover:bg-blue-50/30 transition-colors">
+                              {cols.map(c => <td key={c} className="px-3 py-2 text-slate-700">{r[c] || "—"}</td>)}
+                            </tr>
+                          ))}
+                          {(list||[]).length > 5 && (
+                            <tr><td colSpan={cols.length} className="px-3 py-2 text-xs text-slate-400 italic">... et {(list||[]).length - 5} autres (voir PDF complet)</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            </Section>
 
-          {/* Sections */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Sections du rapport</h2>
-            <div className="space-y-3">
-              {[
-                { n: "1", title: "Informations générales du laboratoire", sub: "Coordonnées et identification" },
-                { n: "2", title: "Équipe de recherche", sub: `${data.equipe.corps_a + data.equipe.corps_b} permanents, ${data.equipe.doctorants} doctorants, ${data.equipe.masters} masters` },
-                { n: "3", title: "Production scientifique", sub: `${data.production.publications_jcr} publications en ${selectedYear}, ${data.production.ouvrages} ouvrages, ${data.production.theses} thèses` },
-                { n: "4", title: "Ouverture sur l'environnement", sub: `${data.ouverture.seminaires} séminaires, ${data.ouverture.conventions} conventions` },
-              ].map(s => (
-                <div key={s.n} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                  <div>
-                    <h3 className="font-medium text-gray-900">{s.n}. {s.title}</h3>
-                    <p className="text-sm text-gray-500">{s.sub}</p>
+            {/* ── Production ── */}
+            <Section title="II. Production scientifique" icon={BookOpen} count={prod.publications_jcr || 0}>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                {[
+                  { label: "Publications JCR", value: prod.publications_jcr || 0 },
+                  { label: "Ouvrages",          value: prod.ouvrages || 0 },
+                  { label: "Thèses",            value: prod.theses || 0 },
+                  { label: "Chapitres",         value: prod.articles_chapitres || 0 },
+                ].map(({ label, value }) => (
+                  <div key={label} className="bg-blue-50 rounded-xl p-4 text-center">
+                    <p className="text-2xl font-black text-blue-700">{value}</p>
+                    <p className="text-xs text-blue-500 font-medium mt-0.5">{label}</p>
                   </div>
-                  <span className="text-green-600 text-sm font-medium">✓ Complet</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <button onClick={() => setShowPreview(true)}
-              className="flex items-center justify-center gap-3 px-6 py-4 bg-white border-2 border-blue-600 text-blue-600 rounded-xl hover:bg-blue-50 transition-all">
-              <Eye className="w-5 h-5" /> Prévisualiser
-            </button>
-            <button onClick={handlePrint}
-              className="flex items-center justify-center gap-3 px-6 py-4 bg-white border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all">
-              <Printer className="w-5 h-5" /> Imprimer
-            </button>
-            <button onClick={handlePrint}
-              className="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg shadow-blue-500/30">
-              <Download className="w-5 h-5" /> Télécharger PDF
-            </button>
-          </div>
-        </>
-      ) : null}
-
-      {/* Preview modal */}
-      {showPreview && data && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900">Rapport d'évaluation {selectedYear}</h2>
-              <button onClick={() => setShowPreview(false)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Fermer</button>
-            </div>
-            <div className="p-8 space-y-8 text-sm">
-              {/* Header */}
-              <div className="text-center border-b pb-6">
-                <h1 className="text-xl font-bold mb-4">RAPPORT D'ÉVALUATION ANNUEL {selectedYear}</h1>
-                <div className="space-y-1 text-gray-600">
-                  <p><strong>Université:</strong> {LAB_INFO.universite}</p>
-                  <p><strong>Établissement:</strong> {LAB_INFO.etablissement}</p>
-                  <p><strong>Dénomination:</strong> {LAB_INFO.denomination}</p>
-                  <p><strong>Code:</strong> {LAB_INFO.code}</p>
-                  <p><strong>Chef LR/UR:</strong> {LAB_INFO.chef} — {LAB_INFO.grade}</p>
-                  <p><strong>Email:</strong> {LAB_INFO.email} | <strong>Site:</strong> {LAB_INFO.siteWeb}</p>
-                </div>
+                ))}
               </div>
-
-              {/* I. Équipe */}
-              <div>
-                <h2 className="text-lg font-bold mb-3">I. ÉQUIPE DE RECHERCHE</h2>
-                <p className="mb-2">I.1 Enseignants-chercheurs permanents — Total: <strong>{data.equipe.corps_a + data.equipe.corps_b}</strong></p>
-                {data.listes.chercheurs_a?.length > 0 && (
-                  <table className="w-full border border-gray-300 text-xs mb-4">
-                    <thead className="bg-gray-50">
-                      <tr>{["Grade","Nom & Prénom","CIN","Établissement","Université"].map(h => <th key={h} className="px-3 py-2 text-left border-r border-gray-300">{h}</th>)}</tr>
-                    </thead>
-                    <tbody>
-                      {data.listes.chercheurs_a.map((r: any, i: number) => (
-                        <tr key={i} className={i % 2 === 0 ? "" : "bg-gray-50"}>
-                          <td className="px-3 py-1.5 border-r border-gray-200">{r.grade}</td>
-                          <td className="px-3 py-1.5 border-r border-gray-200">{r.nom_prenom}</td>
-                          <td className="px-3 py-1.5 border-r border-gray-200">{r.n_cin}</td>
-                          <td className="px-3 py-1.5 border-r border-gray-200">{r.etablissement}</td>
-                          <td className="px-3 py-1.5">{r.universite}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-                <p className="mb-2">I.2 Doctorants — Total: <strong>{data.equipe.doctorants}</strong></p>
-              </div>
-
-              {/* II. Production */}
-              <div>
-                <h2 className="text-lg font-bold mb-3">II. PRODUCTION SCIENTIFIQUE</h2>
-                <p className="mb-2">II.1 Publications parues en {selectedYear} — Total: <strong>{data.production.publications_jcr}</strong></p>
-                {data.listes.publications?.length > 0 && (
-                  <table className="w-full border border-gray-300 text-xs mb-4">
-                    <thead className="bg-gray-50">
-                      <tr>{["Titre","Auteurs","Journal","Année","Source"].map(h => <th key={h} className="px-3 py-2 text-left border-r border-gray-300">{h}</th>)}</tr>
-                    </thead>
-                    <tbody>
-                      {data.listes.publications.map((p: any, i: number) => (
-                        <tr key={i} className={i % 2 === 0 ? "" : "bg-gray-50"}>
-                          <td className="px-3 py-1.5 border-r border-gray-200 max-w-xs">{p.titre}</td>
-                          <td className="px-3 py-1.5 border-r border-gray-200">{p.auteurs}</td>
-                          <td className="px-3 py-1.5 border-r border-gray-200">{p.journal_ou_editeur}</td>
-                          <td className="px-3 py-1.5 border-r border-gray-200">{p.annee}</td>
-                          <td className="px-3 py-1.5">{p.source_scraping}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-                <p className="mb-2">II.2 Ouvrages — Total: <strong>{data.production.ouvrages}</strong></p>
-                <p className="mb-2">II.7 Thèses soutenues — Total: <strong>{data.production.theses}</strong></p>
-              </div>
-
-              {/* III. Ouverture */}
-              <div>
-                <h2 className="text-lg font-bold mb-3">III. OUVERTURE SUR L'ENVIRONNEMENT</h2>
-                <p className="mb-2">III.1 Séminaires & Ateliers — Total: <strong>{data.ouverture.seminaires}</strong></p>
-                {data.listes.evenements?.length > 0 && (
-                  <ul className="list-disc pl-5 mb-4 space-y-1">
-                    {data.listes.evenements.map((e: any, i: number) => (
-                      <li key={i}>{e.titre} — {e.lieu} ({e.date})</li>
+              <p className="text-sm font-bold text-slate-700 mb-2">Publications {year} <span className="text-blue-600">({(listes.publications||[]).length})</span></p>
+              <div className="overflow-x-auto rounded-xl border border-slate-100">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50"><tr>
+                    <th className="px-3 py-2 text-left font-semibold text-slate-500">Titre</th>
+                    <th className="px-3 py-2 text-left font-semibold text-slate-500">Journal</th>
+                    <th className="px-3 py-2 text-left font-semibold text-slate-500">Année</th>
+                    <th className="px-3 py-2 text-left font-semibold text-slate-500">Source</th>
+                  </tr></thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {(listes.publications||[]).slice(0,8).map((p: any, i: number) => (
+                      <tr key={i} className="hover:bg-blue-50/30 transition-colors">
+                        <td className="px-3 py-2 text-slate-700 max-w-xs truncate">{p.titre}</td>
+                        <td className="px-3 py-2 text-slate-500 italic truncate max-w-[160px]">{p.journal_ou_editeur}</td>
+                        <td className="px-3 py-2 text-slate-500 text-center">{p.annee}</td>
+                        <td className="px-3 py-2">
+                          <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-[10px] font-semibold">{p.source_scraping || p.indexation}</span>
+                        </td>
+                      </tr>
                     ))}
-                  </ul>
-                )}
-                <p className="mb-2">III.2 Conventions — Total: <strong>{data.ouverture.conventions}</strong></p>
-                {data.listes.conventions?.length > 0 && (
-                  <ul className="list-disc pl-5 mb-4 space-y-1">
-                    {data.listes.conventions.map((c: any, i: number) => (
-                      <li key={i}>{c.titre} — {c.partenaire} ({c.type}, {c.annee})</li>
-                    ))}
-                  </ul>
-                )}
+                    {(listes.publications||[]).length > 8 && (
+                      <tr><td colSpan={4} className="px-3 py-2 text-xs text-slate-400 italic">... et {(listes.publications||[]).length - 8} autres (voir PDF complet)</td></tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
+            </Section>
+
+            {/* ── Ouverture ── */}
+            <Section title="III. Ouverture sur l'environnement" icon={Calendar} count={(ouv.seminaires||0)+(ouv.conventions||0)}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm font-bold text-slate-700 mb-2">Séminaires & Ateliers ({ouv.seminaires || 0})</p>
+                  {(listes.evenements||[]).length > 0 ? (
+                    <div className="space-y-2">
+                      {(listes.evenements||[]).map((e: any, i: number) => (
+                        <div key={i} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl">
+                          <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <Calendar className="w-4 h-4 text-purple-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">{e.titre}</p>
+                            <p className="text-xs text-slate-500">{e.lieu} · {e.date}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="text-sm text-slate-400 italic">Aucun séminaire enregistré</p>}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-slate-700 mb-2">Conventions ({ouv.conventions || 0})</p>
+                  {(listes.conventions||[]).length > 0 ? (
+                    <div className="space-y-2">
+                      {(listes.conventions||[]).map((c: any, i: number) => (
+                        <div key={i} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl">
+                          <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <Award className="w-4 h-4 text-emerald-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">{c.titre}</p>
+                            <p className="text-xs text-slate-500">{c.partenaire}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="text-sm text-slate-400 italic">Aucune convention enregistrée</p>}
+                </div>
+              </div>
+            </Section>
+
+            {/* ── Note du Directeur ── */}
+            <Section title="Note du Directeur de Laboratoire" icon={FileText} defaultOpen={false}>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Message / Bilan de l'année {year}</p>
+                  <EditableText fieldKey="note_directeur" value={editableFields.note_directeur}
+                    onUpdate={updateField} placeholder="Rédigez ici le bilan et les réalisations de l'année..." />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Perspectives {year + 1}</p>
+                  <EditableText fieldKey="perspectives" value={editableFields.perspectives}
+                    onUpdate={updateField} placeholder="Décrivez les axes de développement et objectifs de la prochaine année..." />
+                </div>
+              </div>
+            </Section>
+          </motion.div>
+        ) : (
+          <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            className="text-center py-16 text-slate-400">
+            <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
+            <p>Impossible de charger les données du rapport</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Save toast ── */}
+      <AnimatePresence>
+        {showSaveToast && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+            className="fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2.5 rounded-2xl text-sm font-medium flex items-center gap-2 shadow-2xl z-50">
+            ✅ Modification enregistrée
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

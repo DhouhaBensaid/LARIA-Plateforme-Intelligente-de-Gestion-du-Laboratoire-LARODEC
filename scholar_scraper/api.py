@@ -403,7 +403,15 @@ def get_researchers(
             continue
         try:
             grade_col = "COALESCE(grade, '') as grade" if has_grade else f"'{cat}' as grade"
-            date_cols = ", COALESCE(url_photo, '') as url_photo, COALESCE(date_debut::text, '') as date_debut, COALESCE(date_fin::text, '') as date_fin" if has_dates else ", '' as url_photo, '' as date_debut, '' as date_fin"
+            # Include url_photo and is_directeur for corps_a and corps_b
+            if has_dates:
+                date_cols = ", COALESCE(url_photo, '') as url_photo, COALESCE(date_debut::text, '') as date_debut, COALESCE(date_fin::text, '') as date_fin, FALSE as is_directeur"
+            elif table in ("enseignants_corps_a", "enseignants_corps_b"):
+                date_cols = ", COALESCE(url_photo, '') as url_photo, '' as date_debut, '' as date_fin, COALESCE(is_directeur, FALSE) as is_directeur"
+            elif table == "cadres_post_doc":
+                date_cols = ", COALESCE(url_photo, '') as url_photo, '' as date_debut, '' as date_fin, FALSE as is_directeur"
+            else:
+                date_cols = ", '' as url_photo, '' as date_debut, '' as date_fin, FALSE as is_directeur"
             sql = f"""
                 SELECT id, nom_prenom,
                        {grade_col},
@@ -417,7 +425,8 @@ def get_researchers(
             if search:
                 sql += " WHERE LOWER(nom_prenom) LIKE %s"
                 params.append(f"%{search.lower()}%")
-            sql += " ORDER BY nom_prenom"
+            # Sort by grade priority then name (wrap in subquery to use alias)
+            sql = f"SELECT * FROM ({sql}) AS sub ORDER BY is_directeur DESC, CASE COALESCE(grade, '') WHEN 'Professeur' THEN 1 WHEN 'Maitre de Conferences' THEN 2 WHEN 'Maître de Conférences' THEN 2 WHEN 'Maitre Assistant' THEN 3 WHEN 'Maître Assistant' THEN 3 WHEN 'Assistant Doctorant' THEN 4 WHEN 'Assistant' THEN 5 ELSE 6 END, nom_prenom"
             rows = query(sql, params)
             results.extend(rows)
         except Exception as e:
@@ -450,20 +459,37 @@ def get_researcher_profile(nom_prenom: str, _: dict = Depends(get_current_user))
             break
 
     if not profile:
-        # Return minimal profile from articles table
         profile = {"nom_prenom": nom_prenom, "grade": "", "etablissement": "", "universite": "", "n_cin": ""}
         categorie = "Externe"
 
     profile["categorie"] = categorie
 
+    # Enrich with contact info from larodec_users using member_id
+    try:
+        if profile.get("id"):
+            user = query("""
+                SELECT email, telephone, orcid, google_scholar_url
+                FROM larodec_users
+                WHERE member_id = %s
+                LIMIT 1
+            """, (profile["id"],), one=True)
+            if user:
+                profile["email"] = user.get("email", "")
+                profile["telephone"] = user.get("telephone", "")
+                profile["orcid"] = user.get("orcid", "")
+                profile["google_scholar_url"] = user.get("google_scholar_url", "")
+    except Exception as e:
+        print(f"[profile contact] {e}")
+
     # Get all publications for this researcher
     pubs = query("""
         SELECT titre, auteurs, journal_ou_editeur, annee, doi, url,
-               source_scraping, citation_apa, type_publication, indexation
+               source_scraping, citation_apa, type_publication, indexation,
+               volume, numero, pages
         FROM articles
         WHERE UPPER(TRIM(chercheur_nom)) = %s
         ORDER BY annee DESC
-        LIMIT 50
+        LIMIT 100
     """, (nom_upper,))
 
     return {
@@ -492,6 +518,37 @@ def get_researcher_stats():
     return stats
 
 
+@app.put("/api/researchers/set-directeur/{table}/{member_id}")
+def set_directeur(table: str, member_id: int, _: dict = Depends(require_admin)):
+    """Set a member as directeur (admin only). Removes previous directeur first."""
+    allowed_tables = ["enseignants_corps_a", "enseignants_corps_b"]
+    if table not in allowed_tables:
+        raise HTTPException(status_code=400, detail="Table non autorisée")
+    try:
+        # Remove all existing directeurs
+        for t in allowed_tables:
+            execute(f"UPDATE {t} SET is_directeur = FALSE WHERE is_directeur = TRUE")
+        # Set new directeur
+        execute(f"UPDATE {table} SET is_directeur = TRUE WHERE id = %s", (member_id,))
+        row = query(f"SELECT nom_prenom FROM {table} WHERE id = %s", (member_id,), one=True)
+        return {"success": True, "directeur": row["nom_prenom"] if row else ""}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/researchers/directeur")
+def get_directeur(_: dict = Depends(get_current_user)):
+    """Get current directeur."""
+    for table in ["enseignants_corps_a", "enseignants_corps_b"]:
+        try:
+            row = query(f"SELECT id, nom_prenom, grade FROM {table} WHERE is_directeur = TRUE LIMIT 1", one=True)
+            if row:
+                return {"table": table, "id": row["id"], "nom_prenom": row["nom_prenom"], "grade": row["grade"]}
+        except Exception:
+            pass
+    return None
+
+
 # ===============================================================================
 # ARTICLES (real scraped data from `articles` table)
 # ===============================================================================
@@ -502,6 +559,7 @@ def get_articles(
     annee: Optional[int] = None,
     search: Optional[str] = None,
     source: Optional[str] = None,
+    type_filter: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
     user: dict = Depends(get_current_user)
@@ -536,19 +594,33 @@ def get_articles(
         params += [f"%{search.lower()}%", f"%{search.lower()}%", f"%{search.lower()}%"]
     if source:
         sql += " AND a.source_scraping = %s"; params.append(source)
+    if type_filter:
+        types = [t.strip() for t in type_filter.split(",") if t.strip()]
+        if types:
+            placeholders = ",".join(["%s"] * len(types))
+            sql += f" AND LOWER(a.type_publication) IN ({placeholders})"
+            params += [t.lower() for t in types]
     sql += " ORDER BY a.annee DESC, a.id DESC LIMIT %s OFFSET %s"
     params += [limit, offset]
     rows = query(sql, params)
 
-    count_sql = "SELECT COUNT(*) as c FROM articles WHERE 1=1"
+    count_sql = """
+        SELECT COUNT(*) as c FROM articles a WHERE 1=1
+    """
     count_params: list = []
     if chercheur:
-        count_sql += " AND UPPER(TRIM(chercheur_nom)) = UPPER(TRIM(%s))"; count_params.append(chercheur)
+        count_sql += " AND UPPER(TRIM(a.chercheur_nom)) = UPPER(TRIM(%s))"; count_params.append(chercheur)
     if annee:
-        count_sql += " AND annee = %s"; count_params.append(annee)
+        count_sql += " AND a.annee = %s"; count_params.append(annee)
     if search:
-        count_sql += " AND (LOWER(titre) LIKE %s OR LOWER(auteurs) LIKE %s OR LOWER(chercheur_nom) LIKE %s)"
+        count_sql += " AND (LOWER(a.titre) LIKE %s OR LOWER(a.auteurs) LIKE %s OR LOWER(a.chercheur_nom) LIKE %s)"
         count_params += [f"%{search.lower()}%", f"%{search.lower()}%", f"%{search.lower()}%"]
+    if type_filter:
+        types = [t.strip() for t in type_filter.split(",") if t.strip()]
+        if types:
+            placeholders = ",".join(["%s"] * len(types))
+            count_sql += f" AND LOWER(a.type_publication) IN ({placeholders})"
+            count_params += [t.lower() for t in types]
     total = list(query(count_sql, count_params, one=True).values())[0]
 
     return {"items": rows, "total": total, "limit": limit, "offset": offset}
@@ -752,6 +824,33 @@ def delete_publication(pub_id: int, user: dict = Depends(get_current_user)):
 def scraper_search(body: ScraperSearchRequest, user: dict = Depends(get_current_user)):
     """Search publications for an author across selected sources."""
     name    = body.authorName.strip()
+    
+    # Validate that the author is a LARODEC member
+    name_upper = name.upper().strip()
+    is_member = False
+    for table in ["enseignants_corps_a", "enseignants_corps_b", "cadres_post_doc", "doctorants", "etudiants_master_recherche"]:
+        try:
+            row = query(f"SELECT id FROM {table} WHERE UPPER(TRIM(nom_prenom)) = %s", (name_upper,), one=True)
+            if row:
+                is_member = True
+                break
+        except Exception:
+            pass
+    
+    if not is_member:
+        # Try partial match
+        for table in ["enseignants_corps_a", "enseignants_corps_b", "cadres_post_doc"]:
+            try:
+                row = query(f"SELECT id FROM {table} WHERE UPPER(TRIM(nom_prenom)) LIKE %s", (f"%{name_upper}%",), one=True)
+                if row:
+                    is_member = True
+                    break
+            except Exception:
+                pass
+    
+    if not is_member:
+        raise HTTPException(status_code=400, detail=f"'{name}' n'est pas un membre LARODEC enregistré dans la base de données.")
+    
     parts   = name.split()
     prenom  = parts[0] if parts else name
     nom     = " ".join(parts[1:]) if len(parts) > 1 else name
@@ -781,6 +880,27 @@ def scraper_search(body: ScraperSearchRequest, user: dict = Depends(get_current_
             print(f"[Scopus] {e}")
 
     unique = deduplicate(all_articles)
+    
+    # Filtrer: garder seulement les articles où le chercheur est bien dans les auteurs
+    import unicodedata
+    def norm(s):
+        if not s: return ""
+        s = s.lower().strip()
+        s = unicodedata.normalize("NFD", s)
+        s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+        return " ".join("".join(c if c.isalpha() or c.isspace() else " " for c in s).split())
+    
+    name_norm = norm(name)
+    name_parts = [p for p in name_norm.split() if len(p) > 2]
+    
+    validated = []
+    for a in unique:
+        auteurs_norm = norm(a.get("auteurs", ""))
+        matches = sum(1 for p in name_parts if p in auteurs_norm)
+        if matches >= min(2, len(name_parts)):
+            validated.append(a)
+    
+    unique = validated
 
     results = [{
         "paperId"   : f"{a.get('source','?')}_{i}",
@@ -825,11 +945,29 @@ def scraper_import(body: ScraperImportRequest, user: dict = Depends(get_current_
     return {"imported": imported, "message": f"{imported} publication(s) importée(s) avec succès"}
 
 
+def _author_in_article(chercheur_nom: str, auteurs: str) -> bool:
+    """Vérifie strictement que le chercheur est bien dans les auteurs."""
+    import unicodedata
+    def norm(s):
+        if not s: return ""
+        s = s.lower().strip()
+        s = unicodedata.normalize("NFD", s)
+        s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+        return " ".join("".join(c if c.isalpha() or c.isspace() else " " for c in s).split())
+    
+    chercheur_norm = norm(chercheur_nom)
+    auteurs_norm = norm(auteurs)
+    parts = [p for p in chercheur_norm.split() if len(p) > 2]
+    if not parts: return False
+    matches = sum(1 for p in parts if p in auteurs_norm)
+    return matches >= min(2, len(parts))
+
+
 @app.post("/api/scraper/auto")
 def scraper_auto(_: dict = Depends(require_admin)):
-    """Auto-scrape all researchers from the DB."""
+    """Auto-scrape all researchers from the DB — only members present in the registry."""
     researchers = []
-    for table in ["enseignants_corps_a", "enseignants_corps_b", "cadres_post_doc"]:
+    for table in ["enseignants_corps_a", "enseignants_corps_b"]:
         try:
             rows = query(f"SELECT nom_prenom FROM {table}")
             researchers.extend([r["nom_prenom"] for r in rows])
@@ -837,7 +975,8 @@ def scraper_auto(_: dict = Depends(require_admin)):
             pass
 
     summary = []
-    for nom_complet in researchers[:10]:  # limit to 10 per call to avoid timeout
+    for nom_complet in researchers[:10]:
+        nom_upper = nom_complet.strip().upper()
         parts  = nom_complet.strip().split()
         prenom = parts[-1] if len(parts) > 1 else parts[0]
         nom    = " ".join(parts[:-1]) if len(parts) > 1 else parts[0]
@@ -846,21 +985,32 @@ def scraper_auto(_: dict = Depends(require_admin)):
             arts    += scrape_openalex(prenom, nom)
             unique   = deduplicate(arts)
             imported = 0
+            skipped  = 0
             for a in unique:
+                # Validation stricte: le chercheur doit être dans les auteurs
+                if not _author_in_article(nom_complet, a.get("auteurs", "")):
+                    skipped += 1
+                    continue
                 doi = (a.get("doi") or "").strip() or None
                 if doi:
-                    exists = query("SELECT id FROM larodec_publications WHERE doi=%s", (doi,), one=True)
+                    exists = query("SELECT id FROM articles WHERE doi=%s", (doi,), one=True)
                     if exists:
                         continue
-                execute("""
-                    INSERT INTO larodec_publications
-                        (titre, journal, annee, indexation, auteurs, impact_factor, statut, doi, abstract, source)
-                    VALUES (%s,%s,%s,%s,%s,0,'en_attente',%s,%s,%s)
-                """, (a.get("titre",""), a.get("venue",""), a.get("annee",0),
-                      a.get("indexation",""), a.get("auteurs",""),
-                      doi, a.get("description",""), a.get("source","scraper")))
-                imported += 1
-            summary.append({"chercheur": nom_complet, "imported": imported})
+                try:
+                    execute("""
+                        INSERT INTO articles
+                            (chercheur_nom, titre, journal_ou_editeur, annee, indexation, auteurs,
+                             doi, url, citation_apa, source_scraping, type_publication)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        ON CONFLICT (doi) WHERE doi IS NOT NULL AND doi <> '' DO NOTHING
+                    """, (nom_upper, a.get("titre",""), a.get("venue",""), a.get("annee",0),
+                          a.get("indexation",""), a.get("auteurs",""),
+                          doi, a.get("url",""), "",
+                          a.get("source","scraper"), a.get("type_publication","")))
+                    imported += 1
+                except Exception:
+                    pass
+            summary.append({"chercheur": nom_complet, "imported": imported, "skipped": skipped})
             time.sleep(0.5)
         except Exception as e:
             summary.append({"chercheur": nom_complet, "error": str(e)})
@@ -942,6 +1092,25 @@ def delete_convention(conv_id: int, user: dict = Depends(require_admin)):
 # RAPPORT ANNUEL — dynamic stats by year
 # ===============================================================================
 
+@app.get("/api/admin/theses")
+def get_all_theses(_: dict = Depends(require_admin)):
+    """Get all theses from all researchers for admin view"""
+    theses = query("""
+        SELECT t.id, t.titre, t.annee, t.annee_premiere_inscription, t.sujet,
+               t.chercheur_id, t.created_at,
+               u.nom, u.prenom, u.grade
+        FROM larodec_theses t
+        LEFT JOIN larodec_users u ON u.id = t.chercheur_id
+        ORDER BY t.annee DESC, t.created_at DESC
+    """)
+    return theses or []
+
+@app.delete("/api/admin/theses/{thesis_id}")
+def admin_delete_thesis(thesis_id: int, user: dict = Depends(require_admin)):
+    execute("DELETE FROM larodec_theses WHERE id = %s", (thesis_id,))
+    _audit(user["id"], "DELETE_THESIS", "larodec_theses", thesis_id)
+    return {"success": True}
+
 @app.get("/api/rapport/{annee}")
 def get_rapport(annee: int, _: dict = Depends(get_current_user)):
     def count(sql, params=()):
@@ -961,7 +1130,11 @@ def get_rapport(annee: int, _: dict = Depends(get_current_user)):
 
     # Portal data filtered by year
     theses_n  = count("SELECT COUNT(*) FROM larodec_theses WHERE annee=%s", (annee,)) if _table_exists("larodec_theses") else 0
-    ouvrages_n = count("SELECT COUNT(*) FROM larodec_ouvrages WHERE annee=%s", (annee,)) if _table_exists("larodec_ouvrages") else 0
+    ouvrages_n = 0  # larodec_ouvrages table may not exist — count from articles instead
+    try:
+        ouvrages_n = count("SELECT COUNT(*) FROM articles WHERE annee=%s AND LOWER(type_publication) IN ('book','books and theses','editorship','livre')", (annee,))
+    except Exception:
+        ouvrages_n = 0
 
     # Ouverture
     seminaires_n = count("SELECT COUNT(*) FROM larodec_evenements WHERE statut='valide' AND date LIKE %s", (f"{annee}%",))
@@ -983,12 +1156,61 @@ def get_rapport(annee: int, _: dict = Depends(get_current_user)):
     chercheurs_a = query("SELECT grade, nom_prenom, n_cin, etablissement, universite FROM enseignants_corps_a ORDER BY nom_prenom")
     chercheurs_b = query("SELECT grade, nom_prenom, n_cin, etablissement, universite FROM enseignants_corps_b ORDER BY nom_prenom")
     doctorants_list = query("SELECT nom_prenom, n_cin, etablissement, universite FROM doctorants ORDER BY nom_prenom")
+    masters_list = query("SELECT nom_prenom, n_cin, etablissement, universite FROM etudiants_master_recherche ORDER BY nom_prenom")
+    post_doc_list = query("SELECT grade, nom_prenom, n_cin, etablissement, universite FROM cadres_post_doc ORDER BY nom_prenom")
+
+    # Publications for the year — all types
+    pubs_list = query("""
+        SELECT titre, auteurs, journal_ou_editeur, annee, doi, source_scraping, indexation, type_publication
+        FROM articles WHERE annee=%s ORDER BY chercheur_nom, titre
+    """, (annee,))
+
+    # Ouvrages (books) — from articles table
+    ouvrages_list = []
+    try:
+        ouvrages_list = query("""
+            SELECT titre, auteurs, journal_ou_editeur, annee
+            FROM articles WHERE annee=%s AND LOWER(type_publication) IN ('book','books and theses','editorship','livre')
+            ORDER BY titre
+        """, (annee,))
+    except Exception:
+        ouvrages_list = []
+
+    # Chapitres
+    chapitres_list = []
+    try:
+        chapitres_list = query("""
+            SELECT titre, auteurs, journal_ou_editeur, annee
+            FROM articles WHERE annee=%s AND LOWER(type_publication) IN ('book-chapter','chapter','parts in books or collections')
+            ORDER BY titre
+        """, (annee,))
+    except Exception:
+        chapitres_list = []
+
+    # Thèses
+    theses_list = []
+    try:
+        theses_list = query("SELECT * FROM larodec_theses WHERE annee=%s ORDER BY titre", (annee,)) if _table_exists("larodec_theses") else []
+    except Exception:
+        theses_list = []
+
+    # Habilitations
+    habilitations_list = []
 
     # Events for the year
     evenements_list = query("SELECT * FROM larodec_evenements WHERE statut='valide' AND date LIKE %s ORDER BY date", (f"{annee}%",))
 
     # Conventions for the year
     conventions_list = query("SELECT * FROM larodec_conventions WHERE annee=%s ORDER BY created_at", (annee,))
+
+    # Counts
+    articles_chapitres_n = 0
+    try:
+        articles_chapitres_n = count("SELECT COUNT(*) FROM articles WHERE annee=%s AND LOWER(type_publication) IN ('conference and workshop papers','inproceedings','book-chapter','chapter','parts in books or collections')", (annee,))
+    except Exception:
+        articles_chapitres_n = 0
+    masteres_n = 0
+    habilitations_n = 0
 
     return {
         "annee": annee,
@@ -1005,6 +1227,9 @@ def get_rapport(annee: int, _: dict = Depends(get_current_user)):
             "publications_total": pubs_all,
             "ouvrages": ouvrages_n,
             "theses": theses_n,
+            "articles_chapitres": articles_chapitres_n,
+            "masteres": masteres_n,
+            "habilitations": habilitations_n,
             "par_source": par_source,
         },
         "ouverture": {
@@ -1013,10 +1238,16 @@ def get_rapport(annee: int, _: dict = Depends(get_current_user)):
             "projets_internationaux": 0,
         },
         "listes": {
-            "publications": top_pubs,
+            "publications": pubs_list,
+            "ouvrages": ouvrages_list,
+            "chapitres": chapitres_list,
+            "theses": theses_list,
+            "habilitations": habilitations_list,
             "chercheurs_a": chercheurs_a,
             "chercheurs_b": chercheurs_b,
             "doctorants": doctorants_list,
+            "masters": masters_list,
+            "post_doc": post_doc_list,
             "evenements": evenements_list,
             "conventions": conventions_list,
         }
@@ -1160,6 +1391,67 @@ def public_conventions():
     return rows or []
 
 
+@app.get("/api/public/articles")
+def public_articles(
+    search: Optional[str] = None,
+    type_filter: Optional[str] = None,
+    chercheur: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
+):
+    """Public articles endpoint — no auth required."""
+    # Type filter mapping
+    type_conditions = ""
+    if type_filter == "revue":
+        type_conditions = " AND LOWER(a.type_publication) IN ('journal articles','article','review','letter')"
+    elif type_filter == "conference":
+        type_conditions = " AND LOWER(a.type_publication) IN ('conference and workshop papers','conference paper','inproceedings')"
+    elif type_filter == "workshop":
+        type_conditions = " AND LOWER(a.type_publication) LIKE '%workshop%'"
+    elif type_filter == "ouvrage":
+        type_conditions = " AND LOWER(a.type_publication) IN ('book-chapter','book chapter','chapter','parts in books or collections','books and theses','book','editorship')"
+
+    sql = f"""
+        SELECT a.id, a.chercheur_nom, a.titre, a.journal_ou_editeur, a.annee,
+               a.auteurs, a.doi, a.url, a.source_scraping, a.indexation,
+               a.type_publication, a.citation_apa
+        FROM articles a
+        WHERE 1=1 {type_conditions}
+    """
+    params: list = []
+    if chercheur:
+        sql += " AND UPPER(TRIM(a.chercheur_nom)) = UPPER(TRIM(%s))"; params.append(chercheur)
+    if search:
+        sql += " AND (LOWER(a.titre) LIKE %s OR LOWER(a.auteurs) LIKE %s OR LOWER(a.chercheur_nom) LIKE %s)"
+        params += [f"%{search.lower()}%", f"%{search.lower()}%", f"%{search.lower()}%"]
+    sql += " ORDER BY a.annee DESC, a.id DESC LIMIT %s OFFSET %s"
+    params += [limit, offset]
+    rows = query(sql, params)
+
+    count_sql = f"SELECT COUNT(*) as c FROM articles a WHERE 1=1 {type_conditions}"
+    count_params: list = []
+    if chercheur:
+        count_sql += " AND UPPER(TRIM(a.chercheur_nom)) = UPPER(TRIM(%s))"; count_params.append(chercheur)
+    if search:
+        count_sql += " AND (LOWER(a.titre) LIKE %s OR LOWER(a.auteurs) LIKE %s OR LOWER(a.chercheur_nom) LIKE %s)"
+        count_params += [f"%{search.lower()}%", f"%{search.lower()}%", f"%{search.lower()}%"]
+    total = list(query(count_sql, count_params, one=True).values())[0]
+
+    return {"items": rows, "total": total}
+
+
+@app.get("/api/public/articles/chercheurs")
+def public_articles_chercheurs():
+    """Distinct researcher names with articles — no auth required."""
+    rows = query("""
+        SELECT DISTINCT chercheur_nom, COUNT(*) as nb
+        FROM articles
+        GROUP BY chercheur_nom
+        ORDER BY chercheur_nom
+    """)
+    return rows or []
+
+
 @app.get("/api/public/researchers")
 def public_researchers(categorie: Optional[str] = None):
     """Public list of researchers for the homepage — no auth required."""
@@ -1170,32 +1462,47 @@ def public_researchers(categorie: Optional[str] = None):
         user_sql = """
             SELECT u.id, u.nom, u.prenom, u.email, u.telephone, u.photo, 
                    CONCAT(u.prenom, ' ', u.nom) as nom_prenom,
-                   COALESCE(
-                     (SELECT grade FROM enseignants_corps_a WHERE LOWER(nom_prenom) = LOWER(CONCAT(u.prenom, ' ', u.nom)) LIMIT 1),
-                     (SELECT grade FROM enseignants_corps_b WHERE LOWER(nom_prenom) = LOWER(CONCAT(u.prenom, ' ', u.nom)) LIMIT 1),
-                     'Chercheur'
-                   ) as grade
+                   u.member_table, u.member_id
             FROM larodec_users u
             WHERE u.role IN ('chercheur', 'admin+chercheur')
             ORDER BY u.nom, u.prenom
         """
         users = query(user_sql)
         for user in users:
-            photo_url = f"/api/auth/photo/{user['id']}" if user.get('photo') else ""
+            # Si l'utilisateur est lié à un membre, récupérer les infos du membre
+            if user.get('member_id') and user.get('member_table'):
+                member_table = user['member_table']
+                member_id = user['member_id']
+                
+                # Récupérer le grade et la photo depuis la table du membre
+                member_sql = f"""
+                    SELECT grade, url_photo 
+                    FROM {member_table} 
+                    WHERE id = %s
+                """
+                member_info = query(member_sql, (member_id,), one=True)
+                
+                grade = member_info.get('grade', 'Chercheur') if member_info else 'Chercheur'
+                has_photo = member_info and member_info.get('url_photo')
+            else:
+                grade = 'Chercheur'
+                member_id = user['id']
+                has_photo = False
+            
             results.append({
-                'id': user['id'],
+                'id': member_id,  # Utiliser member_id pour la photo
                 'nom_prenom': user['nom_prenom'],
-                'grade': user.get('grade', 'Chercheur'),
+                'grade': grade,
                 'categorie': 'Utilisateur',
-                'table_source': 'larodec_users',
-                'url_photo': photo_url,
+                'table_source': user.get('member_table', 'larodec_users'),
+                'url_photo': '',  # Pas besoin, PhotoAvatar utilise l'ID
                 'email': user.get('email', ''),
                 'telephone': user.get('telephone', '')
             })
     except Exception as e:
         print(f"[public_researchers] larodec_users: {e}")
     
-    # Ensuite, récupérer les membres des tables
+    # Ensuite, récupérer les membres des tables (SAUF ceux qui ont déjà un compte utilisateur)
     tables = [
         ("enseignants_corps_a",       "Corps A",          True,  False),
         ("enseignants_corps_b",       "Corps B",          True,  False),
@@ -1209,14 +1516,19 @@ def public_researchers(categorie: Optional[str] = None):
         try:
             grade_col = "COALESCE(grade, '') as grade" if has_grade else f"'{cat}' as grade"
             date_cols = ", COALESCE(url_photo, '') as url_photo" if has_dates else ", '' as url_photo"
+            # Exclure les membres qui ont déjà un compte utilisateur
             sql = f"""
-                SELECT id, nom_prenom,
+                SELECT m.id, m.nom_prenom,
                        {grade_col},
                        '{cat}' as categorie,
                        '{table}' as table_source
                        {date_cols}
-                FROM {table}
-                ORDER BY nom_prenom
+                FROM {table} m
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM larodec_users u 
+                    WHERE u.member_table = '{table}' AND u.member_id = m.id
+                )
+                ORDER BY m.nom_prenom
             """
             rows = query(sql)
             results.extend(rows)
@@ -1233,11 +1545,7 @@ def public_researcher(nom_prenom: str):
         user_sql = """
             SELECT u.id, u.nom, u.prenom, u.email, u.telephone, u.photo, 
                    CONCAT(u.prenom, ' ', u.nom) as nom_prenom,
-                   COALESCE(
-                     (SELECT grade FROM enseignants_corps_a WHERE LOWER(nom_prenom) = LOWER(CONCAT(u.prenom, ' ', u.nom)) LIMIT 1),
-                     (SELECT grade FROM enseignants_corps_b WHERE LOWER(nom_prenom) = LOWER(CONCAT(u.prenom, ' ', u.nom)) LIMIT 1),
-                     'Chercheur'
-                   ) as grade
+                   u.member_table, u.member_id
             FROM larodec_users u
             WHERE LOWER(CONCAT(u.prenom, ' ', u.nom)) = LOWER(%s)
             AND u.role IN ('chercheur', 'admin+chercheur')
@@ -1245,14 +1553,31 @@ def public_researcher(nom_prenom: str):
         """
         user = query(user_sql, (nom_prenom,), one=True)
         if user:
-            photo_url = f"/api/auth/photo/{user['id']}" if user.get('photo') else ""
+            # Si l'utilisateur est lié à un membre, récupérer les infos du membre
+            if user.get('member_id') and user.get('member_table'):
+                member_table = user['member_table']
+                member_id = user['member_id']
+                
+                # Récupérer le grade et la photo depuis la table du membre
+                member_sql = f"""
+                    SELECT grade, url_photo 
+                    FROM {member_table} 
+                    WHERE id = %s
+                """
+                member_info = query(member_sql, (member_id,), one=True)
+                
+                grade = member_info.get('grade', 'Chercheur') if member_info else 'Chercheur'
+            else:
+                grade = 'Chercheur'
+                member_id = user['id']
+            
             return {
-                'id': user['id'],
+                'id': member_id,  # Utiliser member_id pour la photo
                 'nom_prenom': user['nom_prenom'],
-                'grade': user.get('grade', 'Chercheur'),
+                'grade': grade,
                 'categorie': 'Utilisateur',
-                'table_source': 'larodec_users',
-                'url_photo': photo_url,
+                'table_source': user.get('member_table', 'larodec_users'),
+                'url_photo': '',
                 'email': user.get('email', ''),
                 'telephone': user.get('telephone', '')
             }
@@ -1292,24 +1617,105 @@ def public_researcher(nom_prenom: str):
 
 @app.get("/api/public/researcher-publications/{nom_prenom}")
 def public_researcher_publications(nom_prenom: str):
-    """Get publications for a researcher — no auth required."""
+    """Get publications for a researcher — no auth required. Searches both articles and larodec_publications."""
+    results = []
+    nom_upper = nom_prenom.strip().upper()
+    
     try:
-        sql = """
-            SELECT p.*, u.nom, u.prenom 
-            FROM larodec_publications p 
-            LEFT JOIN larodec_users u ON p.chercheur_id=u.id 
-            WHERE p.statut='valide' AND (
-                LOWER(u.nom || ' ' || u.prenom) LIKE LOWER(%s) OR
+        # 1. Chercher dans la table articles (publications scrapées)
+        rows = query("""
+            SELECT titre, auteurs, journal_ou_editeur as journal, annee, doi, url,
+                   source_scraping as source, citation_apa, type_publication as type_publication,
+                   indexation, NULL as impact_factor
+            FROM articles
+            WHERE UPPER(TRIM(chercheur_nom)) = %s
+            ORDER BY annee DESC
+        """, (nom_upper,))
+        results.extend(rows or [])
+    except Exception as e:
+        print(f"[public_researcher_publications] articles: {e}")
+    
+    try:
+        # 2. Chercher dans larodec_publications (publications manuelles validées)
+        rows = query("""
+            SELECT p.titre, p.auteurs, p.journal, p.annee, p.doi, NULL as url,
+                   p.source, NULL as citation_apa, NULL as type_publication,
+                   p.indexation, p.impact_factor
+            FROM larodec_publications p
+            LEFT JOIN larodec_users u ON p.chercheur_id = u.id
+            WHERE p.statut = 'valide' AND (
+                UPPER(TRIM(u.nom || ' ' || u.prenom)) = %s OR
+                UPPER(TRIM(CONCAT(u.prenom, ' ', u.nom))) = %s OR
                 LOWER(p.auteurs) LIKE LOWER(%s)
             )
-            ORDER BY p.annee DESC, p.created_at DESC
-        """
-        search_term = f"%{nom_prenom}%"
-        rows = query(sql, (search_term, search_term))
-        return rows or []
+            ORDER BY p.annee DESC
+        """, (nom_upper, nom_upper, f"%{nom_prenom}%"))
+        results.extend(rows or [])
     except Exception as e:
-        print(f"[public_researcher_publications]: {e}")
-        return []
+        print(f"[public_researcher_publications] larodec_publications: {e}")
+    
+    # Dédupliquer par titre
+    seen = set()
+    unique = []
+    for r in results:
+        key = (r.get('titre') or '').lower().strip()[:80]
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(r)
+    
+    return unique
+
+
+@app.get("/api/public/researcher-photo/{researcher_id}")
+def get_researcher_photo(researcher_id: int, table: Optional[str] = None):
+    """Get researcher's photo. Pass ?table=enseignants_corps_b to specify table."""
+    try:
+        import base64
+        
+        allowed = ["enseignants_corps_a", "enseignants_corps_b", "cadres_post_doc"]
+        
+        # If table specified, search only there
+        if table and table in allowed:
+            tables_to_search = [table]
+        else:
+            tables_to_search = ["enseignants_corps_a", "enseignants_corps_b", "cadres_post_doc"]
+        
+        row = None
+        for t in tables_to_search:
+            try:
+                r = query(f"SELECT url_photo FROM {t} WHERE id = %s", (researcher_id,), one=True)
+                if r and r.get("url_photo"):
+                    row = r
+                    break
+            except Exception:
+                continue
+        
+        if not row or not row.get("url_photo"):
+            raise HTTPException(status_code=404, detail="Photo not found")
+        
+        photo_data = row.get("url_photo")
+        
+        if isinstance(photo_data, bytes):
+            b64_data = base64.b64encode(photo_data).decode('utf-8')
+            return {"photo_url": f"data:image/jpeg;base64,{b64_data}"}
+        
+        if isinstance(photo_data, str):
+            if photo_data.startswith('data:'):
+                return {"photo_url": photo_data}
+            else:
+                try:
+                    base64.b64decode(photo_data)
+                    return {"photo_url": f"data:image/jpeg;base64,{photo_data}"}
+                except:
+                    return {"photo_url": photo_data}
+        
+        raise HTTPException(status_code=500, detail="Invalid photo data format")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[get_researcher_photo] Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/debug/photo-status/{user_id}")

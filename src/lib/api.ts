@@ -116,6 +116,8 @@ export const ouvragesApi = {
 
 export const thesesApi = {
   getAll: () => request<any[]>("/chercheur/theses"),
+  getAllAdmin: () => request<any[]>("/admin/theses"),
+  deleteAdmin: (id: number) => request<any>(`/admin/theses/${id}`, { method: "DELETE" }),
   create: (data: any) => request<any>("/chercheur/theses", { method: "POST", body: JSON.stringify(data) }),
   update: (id: number, data: any) => request<any>(`/chercheur/theses/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id: number) => request<any>(`/chercheur/theses/${id}`, { method: "DELETE" }),
@@ -153,7 +155,7 @@ export const rapportApi = {
 // ─── Real articles (scraped DB) ───────────────────────────────────────────────
 
 export const articlesApi = {
-  getAll: (params?: { chercheur?: string; annee?: number; search?: string; source?: string; limit?: number; offset?: number }) => {
+  getAll: (params?: { chercheur?: string; annee?: number; search?: string; source?: string; type_filter?: string; limit?: number; offset?: number }) => {
     const qs = params ? "?" + new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))).toString() : "";
     return request<{ items: any[]; total: number; limit: number; offset: number }>(`/articles${qs}`);
   },

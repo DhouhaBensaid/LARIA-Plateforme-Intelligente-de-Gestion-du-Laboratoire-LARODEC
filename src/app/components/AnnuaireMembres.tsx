@@ -110,9 +110,10 @@ export function AnnuaireMembres() {
                   className="group text-left bg-white rounded-3xl overflow-hidden hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 border border-gray-100"
                 >
                   <PhotoAvatar
-                    photoUrl={member.url_photo ? `http://localhost:3001${member.url_photo}` : undefined}
+                    photoUrl={member.id ? `http://localhost:3001/api/public/researcher-photo/${member.id}` : undefined}
                     name={member.nom_prenom}
                     size="card"
+                    isJsonResponse={true}
                   />
                   <div className="p-8">
                     <h3 className="text-xl font-bold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">{member.nom_prenom}</h3>

@@ -71,7 +71,6 @@ export function Layout() {
     { icon: Home,          label: "Tableau de bord",   path: "/admin" },
     { icon: Users,         label: "Chercheurs",         path: "/admin/chercheurs" },
     { icon: FileText,      label: "Publications",       path: "/admin/publications" },
-    { icon: BookOpen,      label: "Ouvrages",           path: "/admin/ouvrages" },
     { icon: GraduationCap, label: "Thèses & Mastères", path: "/admin/theses" },
     { icon: Calendar,      label: "Événements",         path: "/admin/evenements" },
     { icon: Handshake,     label: "Conventions",        path: "/admin/conventions" },

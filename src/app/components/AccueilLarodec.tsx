@@ -235,7 +235,14 @@ export function AccueilLarodec() {
     return () => obs.disconnect();
   }, []);
 
-  const scrollTo = (id: string) => { sectionRefs.current[id]?.scrollIntoView({ behavior: "smooth" }); setMenuOpen(false); };
+  const scrollTo = (id: string) => {
+    if (id === "recherche") {
+      navigate("/publications");
+      return;
+    }
+    sectionRefs.current[id]?.scrollIntoView({ behavior: "smooth" });
+    setMenuOpen(false);
+  };
   const partners = getPartners(conventions);
   const ref = (id: string) => (el: HTMLElement | null) => { sectionRefs.current[id] = el; };
 

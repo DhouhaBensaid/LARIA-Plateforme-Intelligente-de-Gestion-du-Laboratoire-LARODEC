@@ -19,6 +19,7 @@ import { MesContributions } from "./components/MesContributions";
 import { ScraperPublications } from "./components/ScraperPublications";
 import { MesTheses } from "./components/MesTheses";
 import { EvenementDetail } from "./components/EvenementDetail";
+import { PublicationsPage } from "./components/PublicationsPage";
 
 export const router = createBrowserRouter([
   {
@@ -28,6 +29,10 @@ export const router = createBrowserRouter([
   {
     path: "/annuaire",
     Component: AnnuaireMembres,
+  },
+  {
+    path: "/publications",
+    Component: PublicationsPage,
   },
   {
     path: "/public/researcher/:nomPrenom",

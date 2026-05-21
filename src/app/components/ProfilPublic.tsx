@@ -91,11 +91,12 @@ export function ProfilPublic() {
           {/* Profil Card */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-3xl shadow-xl overflow-hidden sticky top-6">
-              <PhotoAvatar
-                photoUrl={researcher.url_photo ? `http://localhost:3001${researcher.url_photo}` : undefined}
-                name={researcher.nom_prenom}
-                size="profile"
-              />
+                  <PhotoAvatar
+                    photoUrl={researcher.id ? `http://localhost:3001/api/public/researcher-photo/${researcher.id}` : undefined}
+                    name={researcher.nom_prenom}
+                    size="profile"
+                    isJsonResponse={true}
+                  />
               <div className="p-8">
                 <h2 className="text-3xl font-bold text-gray-900 mb-2">{researcher.nom_prenom}</h2>
                 <p className="text-lg text-blue-600 font-semibold mb-8">{researcher.grade || researcher.categorie}</p>
@@ -155,9 +156,9 @@ export function ProfilPublic() {
                     <div key={idx} className="bg-white rounded-2xl border border-gray-200 p-6 hover:shadow-lg transition-all duration-300">
                       <h4 className="text-lg font-bold text-gray-900 mb-2">{pub.titre}</h4>
                       
-                      {pub.journal && (
+                      {(pub.journal || pub.journal_ou_editeur) && (
                         <p className="text-sm text-gray-600 mb-3">
-                          <span className="font-semibold">Journal:</span> {pub.journal}
+                          <span className="font-semibold">Journal:</span> {pub.journal || pub.journal_ou_editeur}
                         </p>
                       )}
 
