@@ -100,7 +100,8 @@ CREATE TABLE IF NOT EXISTS articles (
     citation_apa        TEXT NOT NULL,
     source_scraping     VARCHAR(100),
     scraped_at          TIMESTAMP DEFAULT NOW(),
-    created_at          TIMESTAMP DEFAULT NOW()
+    created_at          TIMESTAMP DEFAULT NOW(),
+    embedding           TEXT  -- JSON-serialized float32 vector (all-MiniLM-L6-v2, dim=384)
 );
 
 CREATE INDEX IF NOT EXISTS idx_articles_chercheur ON articles(chercheur_nom);
@@ -136,3 +137,9 @@ UNION ALL
 SELECT 'etudiants'  AS categorie, COUNT(*) AS effectif FROM etudiants_master_recherche
 UNION ALL
 SELECT 'cadres'     AS categorie, COUNT(*) AS effectif FROM cadres_post_doc;
+
+-- =============================================================
+-- MIGRATION: add embedding column to existing databases
+-- Run once if upgrading from a version without semantic search
+-- =============================================================
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS embedding TEXT;

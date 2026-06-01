@@ -3,7 +3,7 @@
  */
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { authApi } from "./api";
+import { authApi, setTokens, clearTokens, getToken } from "./api";
 
 export interface Session {
   user: {
@@ -31,27 +31,36 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const TOKEN_KEY = "larodec_token";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Restore session from stored token
+  // Restore session from stored access token
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
+    const token = getToken();
     if (!token) { setIsLoading(false); return; }
     authApi.me()
       .then((user) => setSession({ user }))
-      .catch(() => localStorage.removeItem(TOKEN_KEY))
+      .catch(() => clearTokens())
       .finally(() => setIsLoading(false));
+  }, []);
+
+  // Listen for forced logout (session expired after failed refresh)
+  useEffect(() => {
+    const handler = () => { setSession(null); };
+    window.addEventListener("larodec_session_expired", handler);
+    return () => window.removeEventListener("larodec_session_expired", handler);
   }, []);
 
   const login = async (email: string, password: string): Promise<{ error?: string }> => {
     try {
-      const { token, user } = await authApi.login(email, password);
-      localStorage.setItem(TOKEN_KEY, token);
-      setSession({ user });
+      const data = await authApi.login(email, password);
+      // Support both old { token } and new { access_token, refresh_token } shapes
+      const access  = data.access_token  ?? data.token;
+      const refresh = data.refresh_token ?? data.token;
+      setTokens(access, refresh);
+      setSession({ user: data.user });
       return {};
     } catch (err: any) {
       return { error: err.message };
@@ -59,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    localStorage.removeItem(TOKEN_KEY);
+    clearTokens();
     setSession(null);
   };
 

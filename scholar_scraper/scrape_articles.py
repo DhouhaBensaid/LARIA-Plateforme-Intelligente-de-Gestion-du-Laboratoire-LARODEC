@@ -51,73 +51,106 @@ def normaliser_nom_fichier(s):
 # ══════════════════════════════════════════════════════════
 # SCRAPER 1 — DBLP (depuis dblp_scraper.py)
 # ══════════════════════════════════════════════════════════
+def _auteur_valide(nom_chercheur: str, auteurs: str) -> bool:
+    """
+    Vérifie strictement que le chercheur est bien dans la liste des auteurs.
+    Utilise une normalisation robuste (accents, casse, ponctuation).
+    Retourne True si au moins 2 parties significatives du nom sont présentes.
+    """
+    def norm(s):
+        s = unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode("ascii").lower()
+        return re.sub(r"[^a-z0-9\s]", " ", s)
+
+    nom_norm    = norm(nom_chercheur)
+    auteurs_norm = norm(auteurs)
+    parts = [p for p in nom_norm.split() if len(p) > 2]
+    if not parts:
+        return False
+    matches = sum(1 for p in parts if p in auteurs_norm)
+    required = min(2, len(parts))
+    return matches >= required
+
+
 def scrape_dblp(nom_chercheur):
-    """Extrait les publications DBLP 2021-2026 pour un chercheur."""
+    """
+    Extrait les publications DBLP 2021-2026 pour un chercheur.
+    Amélioration : validation stricte de l'auteur + gestion des variantes de nom.
+    """
     articles  = []
     offset    = 0
     page_size = 100
     nom_query = normaliser(nom_chercheur)
-    
-    # Préparer les parties du nom pour vérification
-    nom_parts = [p.lower() for p in nom_chercheur.strip().split() if len(p) > 2]
 
-    while True:
-        try:
-            resp = SESSION.get(DBLP_API, params={
-                "q": nom_query, "format": "json",
-                "h": page_size, "f": offset
-            }, timeout=15)
-            resp.raise_for_status()
-        except Exception as e:
-            print(f"    [DBLP] Erreur : {e}")
-            break
+    # Générer des variantes de recherche (nom complet + initiales)
+    parts = nom_chercheur.strip().split()
+    variantes_query = [nom_query]
+    if len(parts) >= 2:
+        # Variante avec initiale du prénom : "Ben Amor N"
+        variantes_query.append(f"{normaliser(' '.join(parts[:-1]))} {normaliser(parts[-1])[0]}")
 
-        data      = resp.json()
-        hits_data = data.get("result", {}).get("hits", {})
-        total     = int(hits_data.get("@total", 0))
-        hits      = hits_data.get("hit", [])
+    for query_str in variantes_query:
+        offset = 0
+        while True:
+            try:
+                resp = SESSION.get(DBLP_API, params={
+                    "q": query_str, "format": "json",
+                    "h": page_size, "f": offset
+                }, timeout=15)
+                resp.raise_for_status()
+            except Exception as e:
+                print(f"    [DBLP] Erreur : {e}")
+                break
 
-        if not hits:
-            break
-        if isinstance(hits, dict):
-            hits = [hits]
+            data      = resp.json()
+            hits_data = data.get("result", {}).get("hits", {})
+            total     = int(hits_data.get("@total", 0))
+            hits      = hits_data.get("hit", [])
 
-        for hit in hits:
-            info     = hit.get("info", {})
-            year_str = str(info.get("year", ""))
-            if not year_str.isdigit():
-                continue
-            year = int(year_str)
-            if not (ANNEE_LIMITE <= year <= ANNEE_ACTUELLE):
-                continue
+            if not hits:
+                break
+            if isinstance(hits, dict):
+                hits = [hits]
 
-            authors_raw = info.get("authors", {}).get("author", [])
-            if isinstance(authors_raw, dict):
-                authors_raw = [authors_raw]
-            auteurs = ", ".join(a.get("text", "") for a in authors_raw)
-            
-            # Vérifier que le chercheur est bien dans les auteurs
-            auteurs_lower = auteurs.lower()
-            match_count = sum(1 for part in nom_parts if part in auteurs_lower)
-            # Exiger au moins 2 parties du nom dans les auteurs
-            if len(nom_parts) >= 2 and match_count < 2:
-                continue
-            elif len(nom_parts) == 1 and match_count < 1:
-                continue
+            for hit in hits:
+                info     = hit.get("info", {})
+                year_str = str(info.get("year", ""))
+                if not year_str.isdigit():
+                    continue
+                year = int(year_str)
+                if not (ANNEE_LIMITE <= year <= ANNEE_ACTUELLE):
+                    continue
 
-            articles.append({
-                "titre"   : info.get("title", "").rstrip("."),
-                "auteurs" : auteurs,
-                "venue"   : info.get("venue", ""),
-                "annee"   : year,
-                "doi"     : info.get("doi", ""),
-                "url"     : info.get("ee", info.get("url", "")),
-                "type"    : info.get("type", ""),
-                "source"  : "DBLP"
-            })
+                authors_raw = info.get("authors", {}).get("author", [])
+                if isinstance(authors_raw, dict):
+                    authors_raw = [authors_raw]
+                auteurs = ", ".join(a.get("text", "") for a in authors_raw)
 
-        offset += page_size
-        if offset >= total:
+                # Validation stricte : le chercheur doit être dans les auteurs
+                if not _auteur_valide(nom_chercheur, auteurs):
+                    continue
+
+                titre = info.get("title", "").rstrip(".")
+                # Éviter les doublons entre variantes
+                if any(a.get("titre") == titre for a in articles):
+                    continue
+
+                articles.append({
+                    "titre"   : titre,
+                    "auteurs" : auteurs,
+                    "venue"   : info.get("venue", ""),
+                    "annee"   : year,
+                    "doi"     : info.get("doi", ""),
+                    "url"     : info.get("ee", info.get("url", "")),
+                    "type"    : info.get("type", ""),
+                    "source"  : "DBLP"
+                })
+
+            offset += page_size
+            if offset >= total:
+                break
+
+        # Si la première variante a donné des résultats, pas besoin des autres
+        if articles:
             break
 
     return articles
@@ -127,35 +160,56 @@ def scrape_dblp(nom_chercheur):
 # SCRAPER 2 — OpenAlex/WOS (depuis wos_scraper.py)
 # ══════════════════════════════════════════════════════════
 def scrape_openalex(prenom, nom):
-    """Extrait les publications OpenAlex 2021-2026 (même logique que wos_scraper.py)."""
+    """
+    Extrait les publications OpenAlex 2021-2026.
+    Amélioration : sélection d'auteur par score pondéré + filtre affiliation Tunisie.
+    """
     articles = []
+    nom_complet = f"{prenom} {nom}"
 
-    # Trouver l'auteur
-    try:
-        resp = SESSION.get(f"{OPENALEX_URL}/authors", params={
-            "search": f"{prenom} {nom}", "per_page": 10
-        }, timeout=20)
-        resp.raise_for_status()
-        results = resp.json().get("results", [])
-    except Exception as e:
-        print(f"    [OpenAlex] Erreur recherche auteur : {e}")
+    # Trouver l'auteur — essayer plusieurs variantes
+    variantes = [nom_complet, f"{nom} {prenom}", normaliser(nom_complet)]
+    author_id = None
+
+    for variante in variantes:
+        try:
+            resp = SESSION.get(f"{OPENALEX_URL}/authors", params={
+                "search": variante, "per_page": 10
+            }, timeout=20)
+            resp.raise_for_status()
+            results = resp.json().get("results", [])
+        except Exception as e:
+            print(f"    [OpenAlex] Erreur recherche auteur ({variante}): {e}")
+            continue
+
+        if not results:
+            continue
+
+        # Sélection par score pondéré : correspondance nom + affiliation Tunisie
+        query_norm = normaliser(nom_complet).lower()
+        best_i, best_score = 0, -1
+        for i, a in enumerate(results):
+            name_norm = normaliser(a.get("display_name", "")).lower()
+            score = sum(1 for w in query_norm.split() if len(w) > 2 and w in name_norm)
+            # Bonus affiliation Tunisie
+            affil = (a.get("last_known_institution") or {})
+            if "tunis" in (affil.get("display_name") or "").lower() or \
+               "tunis" in (affil.get("country_code") or "").lower() or \
+               affil.get("country_code") == "TN":
+                score += 2
+            # Bonus si le nom commence pareil
+            if name_norm.startswith(normaliser(prenom).lower()):
+                score += 0.5
+            if score > best_score:
+                best_score, best_i = score, i
+
+        if best_score >= 1:
+            author_id = results[best_i]["id"]
+            break
+
+    if not author_id:
+        print(f"    [OpenAlex] Auteur non trouvé : {nom_complet}")
         return articles
-
-    if not results:
-        return articles
-
-    # Sélection automatique (même algo que wos_scraper.py)
-    query_norm = normaliser(f"{prenom} {nom}").lower()
-    best_i, best_score = 0, -1
-    for i, a in enumerate(results):
-        name_norm = normaliser(a.get("display_name", "")).lower()
-        score = sum(1 for w in query_norm.split() if w in name_norm)
-        if name_norm.startswith(normaliser(prenom).lower()):
-            score += 0.5
-        if score > best_score:
-            best_score, best_i = score, i
-
-    author_id = results[best_i]["id"]
 
     # Récupérer les publications
     page, per_page = 1, 100
@@ -213,22 +267,27 @@ def scrape_openalex(prenom, nom):
 # SCRAPER 3 — Scopus (depuis scopus_scraper.py)
 # ══════════════════════════════════════════════════════════
 def scrape_scopus(prenom, nom):
-    """Extrait les publications Scopus 2021-2026 (même logique que scopus_scraper.py)."""
+    """
+    Extrait les publications Scopus 2021-2026.
+    Amélioration : 3 variantes de requête + filtre affiliation Tunisie en priorité.
+    """
     nom_clean = normaliser(nom)
     pre_clean = normaliser(prenom)
     initiale  = pre_clean[0].upper() if pre_clean else ""
 
-    # Ajouter filtre année + affiliation Tunisie pour éviter les faux positifs
+    # Variantes de requête : du plus précis au plus large
     variantes = [
         f'AUTHNAME("{nom_clean}, {pre_clean}") AND PUBYEAR > 2020 AND AFFILCOUNTRY(Tunisia)',
         f'AUTHNAME("{nom_clean}, {pre_clean}") AND PUBYEAR > 2020',
+        f'AUTHNAME("{nom_clean}, {initiale}") AND PUBYEAR > 2020 AND AFFILCOUNTRY(Tunisia)',
+        f'AUTHNAME("{nom_clean}, {initiale}") AND PUBYEAR > 2020',
     ]
 
     seen_titres = set()
     articles    = []
 
     for query in variantes:
-        if articles:  # si la première variante a trouvé des résultats, on s'arrête
+        if len(articles) >= 5:  # si on a déjà des résultats précis, on s'arrête
             break
         start, par_page = 0, 25
         while True:
@@ -245,13 +304,17 @@ def scrape_scopus(prenom, nom):
                         "field" : "dc:title,dc:creator,prism:publicationName,"
                                   "prism:coverDate,prism:volume,prism:issueIdentifier,"
                                   "prism:pageRange,prism:doi,citedby-count,"
-                                  "subtypeDescription,eid"
+                                  "subtypeDescription,eid,prism:issn"
                     }, timeout=30
                 )
             except Exception as e:
                 print(f"    [Scopus] Erreur : {e}")
                 break
 
+            if r.status_code == 429:
+                print("    [Scopus] Rate limit — pause 10s")
+                time.sleep(10)
+                continue
             if r.status_code != 200:
                 break
 
@@ -276,18 +339,18 @@ def scrape_scopus(prenom, nom):
 
                 doi = art.get("prism:doi", "")
                 articles.append({
-                    "titre"   : titre,
-                    "auteurs" : art.get("dc:creator", ""),
-                    "venue"   : art.get("prism:publicationName", ""),
-                    "annee"   : annee,
-                    "volume"  : art.get("prism:volume", ""),
-                    "numero"  : art.get("prism:issueIdentifier", ""),
-                    "pages"   : art.get("prism:pageRange", ""),
-                    "doi"     : doi,
-                    "url"     : f"https://doi.org/{doi}" if doi else "",
-                    "type"    : art.get("subtypeDescription", ""),
-                    "source"  : "Scopus",
-                    "indexation": "Scopus"
+                    "titre"      : titre,
+                    "auteurs"    : art.get("dc:creator", ""),
+                    "venue"      : art.get("prism:publicationName", ""),
+                    "annee"      : annee,
+                    "volume"     : art.get("prism:volume", ""),
+                    "numero"     : art.get("prism:issueIdentifier", ""),
+                    "pages"      : art.get("prism:pageRange", ""),
+                    "doi"        : doi,
+                    "url"        : f"https://doi.org/{doi}" if doi else "",
+                    "type"       : art.get("subtypeDescription", ""),
+                    "source"     : "Scopus",
+                    "indexation" : "Scopus",
                 })
 
             if start + par_page >= total or len(entries) < par_page:

@@ -1,274 +1,187 @@
+
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Edit2, AlertCircle } from "lucide-react";
+import { Plus, Trash2, Edit2, AlertCircle, GraduationCap, Calendar, BookOpen, X, Check } from "lucide-react";
 import { useAuth } from "../../lib/auth";
 import { thesesApi } from "../../lib/api";
 
 interface Thesis {
-  id: number;
-  titre: string;
-  annee: number;
-  annee_premiere_inscription: number;
-  sujet: string;
-  chercheur_id: number;
-  created_at: string;
+  id: number; titre: string; annee: number;
+  annee_premiere_inscription: number; sujet: string;
+  chercheur_id: number; created_at: string;
 }
+
+const emptyForm = () => ({
+  titre: "", annee: new Date().getFullYear(),
+  annee_premiere_inscription: new Date().getFullYear(), sujet: "",
+});
 
 export function MesTheses() {
   const { session } = useAuth();
   const [theses, setTheses] = useState<Thesis[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState(emptyForm());
 
-  const [formData, setFormData] = useState({
-    titre: "",
-    annee: new Date().getFullYear(),
-    annee_premiere_inscription: new Date().getFullYear(),
-    sujet: "",
-  });
+  useEffect(() => { load(); }, []);
 
-  // Fetch theses
-  useEffect(() => {
-    fetchTheses();
-  }, []);
-
-  const fetchTheses = async () => {
-    try {
-      setIsLoading(true);
-      const data = await thesesApi.getAll();
-      console.log("Theses loaded:", data);
-      setTheses(data);
-      setError(null);
-    } catch (err: any) {
-      console.error("Fetch error:", err);
-      setError(err.message || "Erreur lors du chargement des thèses");
-    } finally {
-      setIsLoading(false);
-    }
+  const load = async () => {
+    try { setLoading(true); setTheses(await thesesApi.getAll()); setError(null); }
+    catch (e: any) { setError(e.message || "Erreur chargement"); }
+    finally { setLoading(false); }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+    e.preventDefault(); setSaving(true);
     try {
-      if (editingId) {
-        await thesesApi.update(editingId, formData);
-      } else {
-        await thesesApi.create(formData);
-      }
-
-      await fetchTheses();
-      setShowForm(false);
-      setEditingId(null);
-      setFormData({
-        titre: "",
-        annee: new Date().getFullYear(),
-        annee_premiere_inscription: new Date().getFullYear(),
-        sujet: "",
-      });
-      setError(null);
-    } catch (err: any) {
-      console.error("Submit error:", err);
-      setError(err.message || "Erreur lors de la sauvegarde");
-    }
+      if (editingId) await thesesApi.update(editingId, form);
+      else await thesesApi.create(form);
+      await load(); closeForm();
+    } catch (e: any) { setError(e.message || "Erreur sauvegarde"); }
+    finally { setSaving(false); }
   };
 
-  const handleEdit = (thesis: Thesis) => {
-    setFormData({
-      titre: thesis.titre,
-      annee: thesis.annee,
-      annee_premiere_inscription: thesis.annee_premiere_inscription,
-      sujet: thesis.sujet,
-    });
-    setEditingId(thesis.id);
-    setShowForm(true);
+  const handleEdit = (t: Thesis) => {
+    setForm({ titre: t.titre, annee: t.annee, annee_premiere_inscription: t.annee_premiere_inscription, sujet: t.sujet });
+    setEditingId(t.id); setShowForm(true);
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Êtes-vous sûr de vouloir supprimer cette thèse?")) return;
-
-    try {
-      await thesesApi.delete(id);
-      await fetchTheses();
-    } catch (err: any) {
-      setError(err.message || "Erreur lors de la suppression");
-    }
+    if (!confirm("Supprimer cette thèse ?")) return;
+    try { await thesesApi.delete(id); await load(); }
+    catch (e: any) { setError(e.message || "Erreur suppression"); }
   };
 
-  const handleCancel = () => {
-    setShowForm(false);
-    setEditingId(null);
-    setFormData({
-      titre: "",
-      annee: new Date().getFullYear(),
-      annee_premiere_inscription: new Date().getFullYear(),
-      sujet: "",
-    });
-  };
+  const closeForm = () => { setShowForm(false); setEditingId(null); setForm(emptyForm()); setError(null); };
 
-  if (isLoading) {
-    return (
-      <div className="p-8">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-1/4"></div>
-          <div className="h-64 bg-gray-200 rounded"></div>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 
   return (
-    <div className="p-8">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-violet-50/20 to-blue-50/20">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-violet-600 to-blue-600 text-white px-8 py-8 shadow-xl">
+        <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Mes Thèses</h1>
-            <p className="text-gray-600 mt-2">Gérez les thèses que vous encadrez</p>
+            <h1 className="text-3xl font-bold mb-1 flex items-center gap-3">
+              <GraduationCap className="w-8 h-8" />Mes Thèses
+            </h1>
+            <p className="text-violet-100 text-sm">Gérez les thèses que vous encadrez</p>
           </div>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-all"
-          >
-            <Plus className="w-5 h-5" />
-            Ajouter une thèse
+          <button onClick={() => { setShowForm(true); setEditingId(null); setForm(emptyForm()); }}
+            className="flex items-center gap-2 px-5 py-2.5 bg-white text-violet-700 rounded-xl font-semibold hover:bg-violet-50 transition-all shadow-md text-sm">
+            <Plus className="w-4 h-4" />Ajouter une thèse
           </button>
+        </div>
+      </div>
+
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-4 mb-8">
+          <div className="bg-white rounded-xl border border-violet-100 p-5 shadow-sm">
+            <p className="text-3xl font-bold text-violet-600">{theses.length}</p>
+            <p className="text-sm text-slate-500 mt-1">Thèses encadrées</p>
+          </div>
+          <div className="bg-white rounded-xl border border-blue-100 p-5 shadow-sm">
+            <p className="text-3xl font-bold text-blue-600">{new Set(theses.map(t => t.annee)).size}</p>
+            <p className="text-sm text-slate-500 mt-1">Années distinctes</p>
+          </div>
+          <div className="bg-white rounded-xl border border-cyan-100 p-5 shadow-sm">
+            <p className="text-3xl font-bold text-cyan-600">{theses.length > 0 ? Math.max(...theses.map(t => t.annee)) : "—"}</p>
+            <p className="text-sm text-slate-500 mt-1">Année la plus récente</p>
+          </div>
         </div>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-            <p className="text-red-700">{error}</p>
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+            <p className="text-red-700 text-sm">{error}</p>
+            <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
           </div>
         )}
 
-        {/* Form */}
+        {/* Form modal */}
         {showForm && (
-          <div className="mb-8 bg-white rounded-lg border border-gray-200 p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">
-              {editingId ? "Modifier la thèse" : "Ajouter une nouvelle thèse"}
-            </h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Titre *
-                </label>
-                <input
-                  type="text"
-                  value={formData.titre}
-                  onChange={(e) => setFormData({ ...formData, titre: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                  placeholder="Titre de la thèse"
-                  required
-                />
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+              <div className="bg-gradient-to-r from-violet-600 to-blue-600 text-white px-6 py-4 flex items-center justify-between">
+                <h2 className="font-bold text-lg">{editingId ? "Modifier la thèse" : "Nouvelle thèse"}</h2>
+                <button onClick={closeForm} className="p-1.5 hover:bg-white/20 rounded-lg transition-all"><X className="w-5 h-5" /></button>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <form onSubmit={handleSubmit} className="p-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Année *
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.annee}
-                    onChange={(e) => setFormData({ ...formData, annee: parseInt(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    required
-                  />
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Titre *</label>
+                  <input type="text" value={form.titre} onChange={e => setForm(p => ({ ...p, titre: e.target.value }))} required placeholder="Titre de la thèse" className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-violet-500 focus:border-transparent outline-none" />
                 </div>
-
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Année *</label>
+                    <input type="number" value={form.annee} onChange={e => setForm(p => ({ ...p, annee: parseInt(e.target.value) }))} required min={1990} max={2030} className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-violet-500 focus:border-transparent outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">1ère inscription *</label>
+                    <input type="number" value={form.annee_premiere_inscription} onChange={e => setForm(p => ({ ...p, annee_premiere_inscription: parseInt(e.target.value) }))} required min={1990} max={2030} className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-violet-500 focus:border-transparent outline-none" />
+                  </div>
+                </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Année de la première inscription *
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.annee_premiere_inscription}
-                    onChange={(e) =>
-                      setFormData({ ...formData, annee_premiere_inscription: parseInt(e.target.value) })
-                    }
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    required
-                  />
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Sujet *</label>
+                  <textarea value={form.sujet} onChange={e => setForm(p => ({ ...p, sujet: e.target.value }))} required rows={3} placeholder="Sujet de la thèse..." className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-violet-500 focus:border-transparent outline-none resize-none" />
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Sujet *
-                </label>
-                <textarea
-                  value={formData.sujet}
-                  onChange={(e) => setFormData({ ...formData, sujet: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                  placeholder="Sujet de la thèse"
-                  rows={4}
-                  required
-                />
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="submit"
-                  className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-all font-medium"
-                >
-                  {editingId ? "Modifier" : "Ajouter"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCancel}
-                  className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-all font-medium"
-                >
-                  Annuler
-                </button>
-              </div>
-            </form>
+                <div className="flex gap-3 pt-2">
+                  <button type="submit" disabled={saving} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-violet-600 to-blue-600 text-white rounded-xl font-semibold hover:from-violet-700 hover:to-blue-700 transition-all disabled:opacity-50">
+                    {saving ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Check className="w-4 h-4" />}
+                    {editingId ? "Modifier" : "Ajouter"}
+                  </button>
+                  <button type="button" onClick={closeForm} className="flex-1 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-semibold hover:bg-slate-200 transition-all">Annuler</button>
+                </div>
+              </form>
+            </div>
           </div>
         )}
 
-        {/* Theses List */}
+        {/* List */}
         {theses.length === 0 ? (
-          <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-            <p className="text-gray-600">Aucune thèse ajoutée pour le moment</p>
+          <div className="bg-white rounded-2xl border border-slate-100 p-16 text-center shadow-sm">
+            <GraduationCap className="w-14 h-14 text-slate-200 mx-auto mb-4" />
+            <p className="text-slate-500 font-medium mb-2">Aucune thèse enregistrée</p>
+            <p className="text-slate-400 text-sm mb-6">Commencez par ajouter les thèses que vous encadrez</p>
+            <button onClick={() => setShowForm(true)} className="inline-flex items-center gap-2 px-5 py-2.5 bg-violet-600 text-white rounded-xl font-semibold hover:bg-violet-700 transition-all text-sm">
+              <Plus className="w-4 h-4" />Ajouter une thèse
+            </button>
           </div>
         ) : (
-          <div className="grid gap-4">
-            {theses.map((thesis) => (
-              <div key={thesis.id} className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-all">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold text-gray-900">{thesis.titre}</h3>
-                    <p className="text-sm text-gray-600 mt-1">{thesis.sujet}</p>
+          <div className="space-y-4">
+            {theses.map(t => (
+              <div key={t.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all overflow-hidden">
+                <div className="flex items-start gap-4 p-6">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-100 to-blue-100 flex items-center justify-center flex-shrink-0">
+                    <GraduationCap className="w-6 h-6 text-violet-600" />
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleEdit(thesis)}
-                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                      title="Modifier"
-                    >
-                      <Edit2 className="w-5 h-5" />
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-slate-900 text-base mb-1 leading-snug">{t.titre}</h3>
+                    <p className="text-sm text-slate-500 mb-3 line-clamp-2">{t.sujet}</p>
+                    <div className="flex flex-wrap gap-3">
+                      <span className="flex items-center gap-1.5 text-xs text-violet-700 bg-violet-50 border border-violet-200 px-2.5 py-1 rounded-full font-medium">
+                        <Calendar className="w-3 h-3" />Soutenance : {t.annee}
+                      </span>
+                      <span className="flex items-center gap-1.5 text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-full font-medium">
+                        <BookOpen className="w-3 h-3" />1ère inscription : {t.annee_premiere_inscription}
+                      </span>
+                      <span className="text-xs text-slate-400">Ajoutée le {new Date(t.created_at).toLocaleDateString("fr-FR")}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-1 flex-shrink-0">
+                    <button onClick={() => handleEdit(t)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all" title="Modifier">
+                      <Edit2 className="w-4 h-4" />
                     </button>
-                    <button
-                      onClick={() => handleDelete(thesis.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                      title="Supprimer"
-                    >
-                      <Trash2 className="w-5 h-5" />
+                    <button onClick={() => handleDelete(t.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-all" title="Supprimer">
+                      <Trash2 className="w-4 h-4" />
                     </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-gray-100">
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Année</p>
-                    <p className="text-lg font-semibold text-gray-900">{thesis.annee}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">1ère inscription</p>
-                    <p className="text-lg font-semibold text-gray-900">{thesis.annee_premiere_inscription}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Ajoutée le</p>
-                    <p className="text-sm text-gray-700">{new Date(thesis.created_at).toLocaleDateString("fr-FR")}</p>
                   </div>
                 </div>
               </div>

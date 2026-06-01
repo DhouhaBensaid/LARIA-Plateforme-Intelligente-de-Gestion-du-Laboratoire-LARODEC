@@ -1,426 +1,467 @@
+
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { Building2, Lock, Mail, User, CreditCard, School, GraduationCap, ArrowLeft, Loader2, Upload, Link as LinkIcon } from "lucide-react";
+import {
+  Lock, Mail, User, GraduationCap, ArrowLeft, Loader2,
+  Upload, Link as LinkIcon, Eye, EyeOff, BookOpen,
+  Users, Award, Globe, ChevronRight, Phone, CreditCard, X,
+} from "lucide-react";
+import logoLarodec from "../../imports/image-1.png";
 import { useAuth } from "../../lib/auth";
-import { authApi } from "../../lib/api";
+
+// ── Stats shown on the left panel ──────────────────────────────────────────
+const STATS = [
+  { label: "Chercheurs", value: "53+", icon: Users },
+  { label: "Publications", value: "880+", icon: BookOpen },
+  { label: "Années d'excellence", value: "20+", icon: Award },
+  { label: "Partenaires", value: "12+", icon: Globe },
+];
+
+const GRADES = [
+  "Professeur",
+  "Maître de Conférences",
+  "Maître Assistant",
+  "Assistant",
+  "Doctorant",
+];
 
 export function LoginPage() {
   const navigate = useNavigate();
   const { login, session } = useAuth();
   const [searchParams] = useSearchParams();
-  const [isRegister, setIsRegister] = useState(false);
+  const [tab, setTab] = useState<"login" | "register">("login");
 
-  const [email, setEmail] = useState("");
+  // login fields
+  const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
-  const [userType, setUserType] = useState<"admin" | "chercheur">("chercheur");
+  const [showPwd, setShowPwd]   = useState(false);
+  const [userType, setUserType] = useState<"chercheur" | "admin">("chercheur");
 
-  const [nom, setNom] = useState("");
-  const [prenom, setPrenom] = useState("");
-  const [cin, setCin] = useState("");
-  const [etablissement, setEtablissement] = useState("");
-  const [universite, setUniversite] = useState("");
-  const [grade, setGrade] = useState("");
-  const [telephone, setTelephone] = useState("");
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const [googleScholarUrl, setGoogleScholarUrl] = useState("");
+  // register fields
+  const [rNom, setRNom]           = useState("");
+  const [rPrenom, setRPrenom]     = useState("");
+  const [rCin, setRCin]           = useState("");
+  const [rTel, setRTel]           = useState("");
+  const [rEtab, setREtab]         = useState("");
+  const [rUniv, setRUniv]         = useState("");
+  const [rGrade, setRGrade]       = useState("");
+  const [rEmail, setREmail]       = useState("");
+  const [rPwd, setRPwd]           = useState("");
+  const [rShowPwd, setRShowPwd]   = useState(false);
+  const [rScholar, setRScholar]   = useState("");
+  const [rPhoto, setRPhoto]       = useState<File | null>(null);
+  const [rPhotoPreview, setRPhotoPreview] = useState<string | null>(null);
+  const [step, setStep]           = useState(1); // multi-step register
 
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Redirect if already logged in
-  useEffect(() => {
-    if (session) {
-      // Redirect based on userType selected
-      if (userType === "admin") {
-        navigate("/admin");
-      } else {
-        navigate("/chercheur");
-      }
-    }
-  }, [session, navigate, userType]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    if (searchParams.get("register") === "true") setIsRegister(true);
+    if (session) navigate(session.user.role?.includes("admin") ? "/admin" : "/chercheur");
+  }, [session]);
+
+  useEffect(() => {
+    if (searchParams.get("register") === "true") setTab("register");
   }, [searchParams]);
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (!file.type.includes("image/png")) {
-        setError("Veuillez sélectionner une image PNG");
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        setError("La photo ne doit pas dépasser 5 MB");
-        return;
-      }
-      setPhotoFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
+    if (!file) return;
+    if (!file.type.includes("image/png")) { setError("Format PNG uniquement"); return; }
+    if (file.size > 5 * 1024 * 1024) { setError("Photo max 5 MB"); return; }
+    setRPhoto(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setRPhotoPreview(reader.result as string);
+    reader.readAsDataURL(file);
+    setError(null);
   };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     const { error: err } = await login(email, password);
-    if (err) {
-      setError(err);
-      setIsLoading(false);
-      return;
-    }
-    // navigation handled by the useEffect above
+    if (err) { setError(err); setLoading(false); }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
-      const formData = new FormData();
-      formData.append("email", email);
-      formData.append("password", password);
-      formData.append("nom", nom);
-      formData.append("prenom", prenom);
-      formData.append("cin", cin);
-      formData.append("etablissement", etablissement);
-      formData.append("universite", universite);
-      formData.append("grade", grade);
-      formData.append("telephone", telephone);
-      formData.append("google_scholar_url", googleScholarUrl);
-      if (photoFile) {
-        formData.append("photo", photoFile);
-      }
-
-      const response = await fetch("http://localhost:3001/api/auth/register", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Erreur lors de l'inscription");
-      }
-
-      const { token, user } = await response.json();
-      localStorage.setItem("larodec_token", token);
-      const { error: err } = await login(email, password);
-      if (err) setError(err);
+      const fd = new FormData();
+      fd.append("email", rEmail); fd.append("password", rPwd);
+      fd.append("nom", rNom); fd.append("prenom", rPrenom);
+      fd.append("cin", rCin); fd.append("telephone", rTel);
+      fd.append("etablissement", rEtab); fd.append("universite", rUniv);
+      fd.append("grade", rGrade); fd.append("google_scholar_url", rScholar);
+      if (rPhoto) fd.append("photo", rPhoto);
+      const res = await fetch("http://localhost:3001/api/auth/register", { method: "POST", body: fd });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.detail || "Erreur inscription"); }
+      setSuccess("Compte créé ! Connexion en cours...");
+      await login(rEmail, rPwd);
     } catch (err: any) {
       setError(err.message || "Erreur lors de l'inscription");
-    } finally {
-      setIsLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
-  // Quick-fill helpers for demo
-  const fillAdmin = () => { setEmail("admin@larodec.tn"); setPassword("admin123"); setUserType("admin"); };
-  const fillChercheur = () => { setEmail("chercheur@larodec.tn"); setPassword("chercheur123"); setUserType("chercheur"); };
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl">
-        <button onClick={() => navigate("/")} className="mb-6 flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all">
-          <ArrowLeft className="w-5 h-5" />
-          Retour à l'accueil
-        </button>
+    <div className="min-h-screen flex">
 
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl mb-4">
-            <Building2 className="w-8 h-8 text-white" />
+      {/* ── LEFT PANEL — branding ── */}
+      <div className="hidden lg:flex lg:w-5/12 xl:w-1/2 relative overflow-hidden flex-col">
+        {/* Animated gradient background */}
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-700 via-blue-600 to-cyan-500" />
+        <div className="absolute inset-0 opacity-20">
+          <div className="absolute top-0 left-0 w-96 h-96 bg-white rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
+          <div className="absolute bottom-0 right-0 w-80 h-80 bg-cyan-300 rounded-full blur-3xl translate-x-1/3 translate-y-1/3" />
+          <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-blue-300 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
+        </div>
+        {/* Grid pattern overlay */}
+        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "32px 32px" }} />
+
+        <div className="relative flex flex-col h-full px-12 py-12">
+          {/* Back button */}
+          <button onClick={() => navigate("/")} className="flex items-center gap-2 text-white/70 hover:text-white transition-colors text-sm font-medium w-fit">
+            <ArrowLeft className="w-4 h-4" />Retour à l'accueil
+          </button>
+
+          {/* Logo + title */}
+          <div className="flex-1 flex flex-col justify-center">
+            <div className="w-24 h-24 bg-white/15 backdrop-blur-sm rounded-3xl flex items-center justify-center mb-8 shadow-xl border border-white/30 p-2">
+              <img src={logoLarodec} alt="LARODEC" className="w-full h-full object-contain drop-shadow-lg" />
+            </div>
+            <h1 className="text-5xl font-black text-white mb-3 leading-tight">LARODEC</h1>
+            <p className="text-white/80 text-lg font-medium mb-2 leading-snug">
+              Laboratoire de Recherche Opérationnelle,<br />de Décision et de Contrôle de Processus
+            </p>
+            <p className="text-white/60 text-sm mb-12">ISG · Université de Tunis</p>
+
+            {/* Stats grid */}
+            <div className="grid grid-cols-2 gap-4">
+              {STATS.map(({ label, value, icon: Icon }) => (
+                <div key={label} className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-5 hover:bg-white/15 transition-all">
+                  <Icon className="w-5 h-5 text-white/70 mb-3" />
+                  <p className="text-3xl font-black text-white">{value}</p>
+                  <p className="text-white/60 text-xs font-medium mt-1">{label}</p>
+                </div>
+              ))}
+            </div>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">LARODEC</h1>
-          <p className="text-gray-600">Laboratoire de Recherche Opérationnelle, de Décision et de Contrôle de Processus</p>
-          <p className="text-sm text-gray-500 mt-2">ISG - Institut Supérieur de Gestion</p>
+
+          {/* Footer */}
+          <p className="text-white/40 text-xs">© 2026 LARODEC · ISG Tunis</p>
+        </div>
+      </div>
+
+      {/* ── RIGHT PANEL — form ── */}
+      <div className="flex-1 flex flex-col bg-slate-50 overflow-y-auto">
+        {/* Mobile back button */}
+        <div className="lg:hidden px-6 pt-6">
+          <button onClick={() => navigate("/")} className="flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors text-sm">
+            <ArrowLeft className="w-4 h-4" />Retour
+          </button>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
-          {/* Tabs */}
-          <div className="flex gap-2 mb-6 p-1 bg-gray-100 rounded-lg">
-            <button type="button" onClick={() => setIsRegister(false)}
-              className={`flex-1 py-3 px-4 rounded-md text-sm font-medium transition-all ${!isRegister ? "bg-white text-blue-700 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}>
-              Connexion
-            </button>
-            <button type="button" onClick={() => setIsRegister(true)}
-              className={`flex-1 py-3 px-4 rounded-md text-sm font-medium transition-all ${isRegister ? "bg-white text-blue-700 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}>
-              Inscription
-            </button>
-          </div>
+        <div className="flex-1 flex items-start justify-center px-6 py-10">
+          <div className="w-full max-w-md">
 
-          {!isRegister ? (
-            <>
-              <h2 className="text-xl font-bold text-gray-900 mb-2">Connexion</h2>
-
-              {/* Demo credentials hint */}
-              <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-700">
-                <p className="font-semibold mb-1">Comptes de démonstration :</p>
-                <button onClick={fillAdmin} className="underline mr-3">Admin — admin@larodec.tn / admin123</button>
-                <button onClick={fillChercheur} className="underline">Chercheur — chercheur@larodec.tn / chercheur123</button>
+            {/* Mobile logo */}
+            <div className="lg:hidden text-center mb-8">
+              <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg p-1.5 border border-slate-200">
+                <img src={logoLarodec} alt="LARODEC" className="w-full h-full object-contain" />
               </div>
+              <h1 className="text-2xl font-black text-slate-900">LARODEC</h1>
+              <p className="text-slate-500 text-sm mt-1">ISG · Université de Tunis</p>
+            </div>
 
-              {error && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
+            {/* Tab switcher */}
+            <div className="flex bg-white border border-slate-200 rounded-2xl p-1 mb-8 shadow-sm">
+              {(["login", "register"] as const).map(t => (
+                <button key={t} onClick={() => { setTab(t); setError(null); setStep(1); }}
+                  className={`flex-1 py-3 rounded-xl text-sm font-semibold transition-all ${
+                    tab === t
+                      ? "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-md"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}>
+                  {t === "login" ? "Connexion" : "Inscription"}
+                </button>
+              ))}
+            </div>
 
-              <div className="flex gap-2 mb-6 p-1 bg-gray-100 rounded-lg">
-                <button type="button" onClick={() => setUserType("chercheur")}
-                  className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${userType === "chercheur" ? "bg-white text-blue-700 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}>
-                  Chercheur
-                </button>
-                <button type="button" onClick={() => setUserType("admin")}
-                  className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${userType === "admin" ? "bg-white text-blue-700 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}>
-                  Administrateur
-                </button>
+            {/* Error / Success */}
+            {error && (
+              <div className="mb-5 flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+                <span className="flex-1">{error}</span>
+                <button onClick={() => setError(null)}><X className="w-4 h-4" /></button>
               </div>
+            )}
+            {success && (
+              <div className="mb-5 p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-700 font-medium">{success}</div>
+            )}
 
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                      placeholder="votre.email@exemple.com" required />
-                  </div>
+            {/* ── LOGIN FORM ── */}
+            {tab === "login" && (
+              <div>
+                <div className="mb-6">
+                  <h2 className="text-2xl font-black text-slate-900">Bon retour 👋</h2>
+                  <p className="text-slate-500 text-sm mt-1">Connectez-vous à votre espace LARODEC</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Mot de passe</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                      placeholder="••••••••" required />
-                  </div>
-                </div>
-                <button type="submit" disabled={isLoading}
-                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white py-3 rounded-lg font-medium hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg shadow-blue-500/30 disabled:opacity-50">
-                  {isLoading && <Loader2 className="w-5 h-5 animate-spin" />}
-                  Se connecter
-                </button>
-              </form>
-            </>
-          ) : (
-            <>
-              <h2 className="text-xl font-bold text-gray-900 mb-6">Créer un compte chercheur</h2>
-              {error && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
 
-              <form onSubmit={handleRegister} className="space-y-6">
-                {/* Photo Upload Section */}
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-100">
-                  <label className="block text-sm font-semibold text-gray-900 mb-4">Photo de profil (PNG) *</label>
-                  <div className="flex gap-6 items-start">
-                    {/* Photo Preview */}
-                    <div className="flex-shrink-0">
-                      {photoPreview ? (
+
+                <form onSubmit={handleLogin} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Email</label>
+                    <div className="relative">
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
+                        placeholder="votre.email@exemple.com"
+                        className="w-full pl-11 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all shadow-sm" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Mot de passe</label>
+                    <div className="relative">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input type={showPwd ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} required
+                        placeholder="••••••••"
+                        className="w-full pl-11 pr-12 py-3.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all shadow-sm" />
+                      <button type="button" onClick={() => setShowPwd(!showPwd)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
+                        {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <button type="submit" disabled={loading}
+                    className="w-full flex items-center justify-center gap-2 py-4 bg-gradient-to-r from-blue-600 to-cyan-500 text-white rounded-xl font-bold text-sm hover:from-blue-700 hover:to-cyan-600 transition-all shadow-lg shadow-blue-500/25 disabled:opacity-50 mt-2">
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+                    Se connecter
+                    {!loading && <ChevronRight className="w-4 h-4" />}
+                  </button>
+                </form>
+
+                <p className="text-center text-sm text-slate-500 mt-6">
+                  Pas encore de compte ?{" "}
+                  <button onClick={() => setTab("register")} className="text-blue-600 font-semibold hover:underline">S'inscrire</button>
+                </p>
+              </div>
+            )}
+
+            {/* ── REGISTER FORM — multi-step ── */}
+            {tab === "register" && (
+              <div>
+                <div className="mb-6">
+                  <h2 className="text-2xl font-black text-slate-900">Créer un compte</h2>
+                  <p className="text-slate-500 text-sm mt-1">Rejoignez la communauté LARODEC</p>
+                </div>
+
+                {/* Step indicator */}
+                <div className="flex items-center gap-2 mb-8">
+                  {[1, 2, 3].map(s => (
+                    <div key={s} className="flex items-center gap-2 flex-1">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                        step > s ? "bg-emerald-500 text-white" :
+                        step === s ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30" :
+                        "bg-slate-200 text-slate-500"
+                      }`}>
+                        {step > s ? "✓" : s}
+                      </div>
+                      <div className={`flex-1 h-0.5 rounded-full transition-all ${s < 3 ? (step > s ? "bg-emerald-400" : "bg-slate-200") : "hidden"}`} />
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-between text-xs text-slate-500 mb-6 -mt-4">
+                  <span className={step >= 1 ? "text-blue-600 font-semibold" : ""}>Identité</span>
+                  <span className={step >= 2 ? "text-blue-600 font-semibold" : ""}>Académique</span>
+                  <span className={step >= 3 ? "text-blue-600 font-semibold" : ""}>Sécurité</span>
+                </div>
+
+                <form onSubmit={step < 3 ? (e) => { e.preventDefault(); setStep(s => s + 1); } : handleRegister}>
+
+                  {/* STEP 1 — Identity */}
+                  {step === 1 && (
+                    <div className="space-y-4">
+                      {/* Photo upload */}
+                      <div className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
+                        <div className="relative w-16 h-16 flex-shrink-0">
+                          {rPhotoPreview ? (
+                            <>
+                              <img src={rPhotoPreview} alt="preview" className="w-16 h-16 rounded-xl object-cover border-2 border-blue-300" />
+                              <button type="button" onClick={() => { setRPhoto(null); setRPhotoPreview(null); }}
+                                className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600">
+                                <X className="w-3 h-3" />
+                              </button>
+                            </>
+                          ) : (
+                            <label className="w-16 h-16 rounded-xl bg-slate-100 border-2 border-dashed border-slate-300 flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-all">
+                              <Upload className="w-5 h-5 text-slate-400" />
+                              <input type="file" accept=".png" onChange={handlePhotoChange} className="hidden" />
+                            </label>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-700">Photo de profil</p>
+                          <p className="text-xs text-slate-400 mt-0.5">PNG · max 5 MB · optionnel</p>
+                          {!rPhotoPreview && (
+                            <label className="mt-2 inline-flex items-center gap-1.5 text-xs text-blue-600 font-medium cursor-pointer hover:underline">
+                              <Upload className="w-3 h-3" />Choisir une photo
+                              <input type="file" accept=".png" onChange={handlePhotoChange} className="hidden" />
+                            </label>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">Nom *</label>
+                          <div className="relative">
+                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                            <input type="text" value={rNom} onChange={e => setRNom(e.target.value)} required placeholder="Nom"
+                              className="w-full pl-9 pr-3 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">Prénom *</label>
+                          <input type="text" value={rPrenom} onChange={e => setRPrenom(e.target.value)} required placeholder="Prénom"
+                            className="w-full px-3 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">CIN *</label>
+                          <div className="relative">
+                            <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                            <input type="text" value={rCin} onChange={e => setRCin(e.target.value)} required placeholder="N° CIN"
+                              className="w-full pl-9 pr-3 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">Téléphone</label>
+                          <div className="relative">
+                            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                            <input type="tel" value={rTel} onChange={e => setRTel(e.target.value)} placeholder="+216 XX XXX XXX"
+                              className="w-full pl-9 pr-3 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* STEP 2 — Academic */}
+                  {step === 2 && (
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">Établissement *</label>
+                        <input type="text" value={rEtab} onChange={e => setREtab(e.target.value)} required placeholder="Ex: ISG Tunis"
+                          className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">Université *</label>
+                        <input type="text" value={rUniv} onChange={e => setRUniv(e.target.value)} required placeholder="Ex: Université de Tunis"
+                          className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">Grade *</label>
                         <div className="relative">
-                          <img src={photoPreview} alt="Preview" className="w-24 h-24 rounded-lg object-cover border-2 border-blue-300" />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPhotoFile(null);
-                              setPhotoPreview(null);
-                            }}
-                            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600"
-                          >
-                            ✕
+                          <GraduationCap className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <select value={rGrade} onChange={e => setRGrade(e.target.value)} required
+                            className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm appearance-none">
+                            <option value="">Sélectionnez votre grade</option>
+                            {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">Google Scholar</label>
+                        <div className="relative">
+                          <LinkIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <input type="url" value={rScholar} onChange={e => setRScholar(e.target.value)} placeholder="https://scholar.google.com/..."
+                            className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm" />
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">Optionnel — pour la synchronisation automatique</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* STEP 3 — Security */}
+                  {step === 3 && (
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">Email *</label>
+                        <div className="relative">
+                          <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <input type="email" value={rEmail} onChange={e => setREmail(e.target.value)} required placeholder="votre.email@exemple.com"
+                            className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">Mot de passe *</label>
+                        <div className="relative">
+                          <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <input type={rShowPwd ? "text" : "password"} value={rPwd} onChange={e => setRPwd(e.target.value)} required placeholder="••••••••" minLength={6}
+                            className="w-full pl-11 pr-12 py-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm" />
+                          <button type="button" onClick={() => setRShowPwd(!rShowPwd)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
+                            {rShowPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
                         </div>
-                      ) : (
-                        <div className="w-24 h-24 rounded-lg bg-gray-200 border-2 border-dashed border-gray-300 flex items-center justify-center">
-                          <Upload className="w-8 h-8 text-gray-400" />
-                        </div>
-                      )}
-                    </div>
-                    {/* Upload Input */}
-                    <div className="flex-1">
-                      <input
-                        type="file"
-                        accept=".png"
-                        onChange={handlePhotoChange}
-                        className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
-                      />
-                      <p className="text-xs text-gray-600 mt-2">Format: PNG • Taille max: 5 MB</p>
-                    </div>
-                  </div>
-                </div>
+                        {/* Password strength */}
+                        {rPwd && (
+                          <div className="mt-2">
+                            <div className="flex gap-1">
+                              {[1,2,3,4].map(i => (
+                                <div key={i} className={`flex-1 h-1 rounded-full transition-all ${
+                                  rPwd.length >= i * 3
+                                    ? i <= 1 ? "bg-red-400" : i <= 2 ? "bg-orange-400" : i <= 3 ? "bg-yellow-400" : "bg-emerald-400"
+                                    : "bg-slate-200"
+                                }`} />
+                              ))}
+                            </div>
+                            <p className="text-xs text-slate-400 mt-1">
+                              {rPwd.length < 4 ? "Trop court" : rPwd.length < 7 ? "Faible" : rPwd.length < 10 ? "Moyen" : "Fort"}
+                            </p>
+                          </div>
+                        )}
+                      </div>
 
-                {/* Personal Information */}
-                <div className="bg-white rounded-lg p-6 border border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <User className="w-4 h-4 text-blue-600" />
-                    Informations personnelles
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Nom *</label>
-                      <input
-                        type="text"
-                        value={nom}
-                        onChange={(e) => setNom(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                        placeholder="Votre nom"
-                        required
-                      />
+                      {/* Summary */}
+                      <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm space-y-1.5">
+                        <p className="font-semibold text-slate-700 mb-2">Récapitulatif</p>
+                        <p className="text-slate-600"><span className="font-medium">Nom :</span> {rPrenom} {rNom}</p>
+                        <p className="text-slate-600"><span className="font-medium">Grade :</span> {rGrade}</p>
+                        <p className="text-slate-600"><span className="font-medium">Établissement :</span> {rEtab}</p>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Prénom *</label>
-                      <input
-                        type="text"
-                        value={prenom}
-                        onChange={(e) => setPrenom(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                        placeholder="Votre prénom"
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">CIN *</label>
-                      <input
-                        type="text"
-                        value={cin}
-                        onChange={(e) => setCin(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                        placeholder="Numéro de CIN"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Téléphone</label>
-                      <input
-                        type="tel"
-                        value={telephone}
-                        onChange={(e) => setTelephone(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                        placeholder="+216 XX XXX XXX"
-                      />
-                    </div>
-                  </div>
-                </div>
+                  )}
 
-                {/* Academic Information */}
-                <div className="bg-white rounded-lg p-6 border border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <GraduationCap className="w-4 h-4 text-blue-600" />
-                    Informations académiques
-                  </h3>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Établissement *</label>
-                      <input
-                        type="text"
-                        value={etablissement}
-                        onChange={(e) => setEtablissement(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                        placeholder="Ex: Institut Supérieur de Gestion"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Université *</label>
-                      <input
-                        type="text"
-                        value={universite}
-                        onChange={(e) => setUniversite(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                        placeholder="Ex: Université de Tunis"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Grade *</label>
-                      <select
-                        value={grade}
-                        onChange={(e) => setGrade(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                        required
-                      >
-                        <option value="">Sélectionnez votre grade</option>
-                        <option value="Professeur">Professeur d'Enseignement Supérieur</option>
-                        <option value="Maître de Conférences">Maître de Conférences</option>
-                        <option value="Maître Assistant">Maître Assistant</option>
-                        <option value="Assistant">Assistant</option>
-                        <option value="Doctorant">Doctorant</option>
-                      </select>
-                    </div>
+                  {/* Navigation buttons */}
+                  <div className="flex gap-3 mt-6">
+                    {step > 1 && (
+                      <button type="button" onClick={() => setStep(s => s - 1)}
+                        className="flex-1 py-3.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-semibold text-sm hover:bg-slate-50 transition-all">
+                        Retour
+                      </button>
+                    )}
+                    <button type="submit" disabled={loading}
+                      className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold text-sm transition-all shadow-lg disabled:opacity-50 ${
+                        step === 3
+                          ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-emerald-500/25 hover:from-emerald-600 hover:to-teal-600"
+                          : "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-blue-500/25 hover:from-blue-700 hover:to-cyan-600"
+                      }`}>
+                      {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+                      {step < 3 ? <><span>Suivant</span><ChevronRight className="w-4 h-4" /></> : "Créer mon compte"}
+                    </button>
                   </div>
-                </div>
+                </form>
 
-                {/* Contact & Scholar */}
-                <div className="bg-white rounded-lg p-6 border border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-blue-600" />
-                    Contact & Profil académique
-                  </h3>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                        placeholder="votre.email@exemple.com"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                        <LinkIcon className="w-4 h-4" />
-                        Lien Google Scholar
-                      </label>
-                      <input
-                        type="url"
-                        value={googleScholarUrl}
-                        onChange={(e) => setGoogleScholarUrl(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                        placeholder="https://scholar.google.com/citations?user=..."
-                      />
-                      <p className="text-xs text-gray-500 mt-1">Optionnel - Lien vers votre profil Google Scholar</p>
-                    </div>
-                  </div>
-                </div>
+                <p className="text-center text-sm text-slate-500 mt-6">
+                  Déjà un compte ?{" "}
+                  <button onClick={() => setTab("login")} className="text-blue-600 font-semibold hover:underline">Se connecter</button>
+                </p>
+              </div>
+            )}
 
-                {/* Security */}
-                <div className="bg-white rounded-lg p-6 border border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-blue-600" />
-                    Sécurité
-                  </h3>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Mot de passe *</label>
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                      placeholder="••••••••"
-                      required
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Minimum 8 caractères recommandé</p>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-green-700 text-white py-3 rounded-lg font-medium hover:from-green-700 hover:to-green-800 transition-all shadow-lg shadow-green-500/30 disabled:opacity-50"
-                >
-                  {isLoading && <Loader2 className="w-5 h-5 animate-spin" />}
-                  Créer mon compte
-                </button>
-              </form>
-            </>
-          )}
+          </div>
         </div>
 
-        <p className="text-center text-sm text-gray-500 mt-8">
-          © 2025 LARODEC - ISG. Tous droits réservés.
-        </p>
+        <p className="text-center text-xs text-slate-400 pb-6">© 2026 LARODEC · ISG Tunis · Tous droits réservés</p>
       </div>
     </div>
   );

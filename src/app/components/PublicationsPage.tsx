@@ -1,10 +1,36 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import { Search, ArrowLeft, BookOpen, ChevronLeft, ChevronRight,
-         ExternalLink, Copy, Check, X, User, Filter, Layers, FileText, Mic, BookMarked } from "lucide-react";
+         ExternalLink, Copy, Check, X, User, Filter, Layers, FileText, Mic, BookMarked, Loader2 } from "lucide-react";
 import logoLarodec from "../../imports/image-1.png";
 
-const BASE = "http://localhost:3001";
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface PublicationWithScore {
+  id: string | number;
+  titre: string;
+  score?: number;
+  type_publication?: string;
+  auteurs?: string;
+  annee?: number;
+  journal_ou_editeur?: string;
+  doi?: string;
+  url?: string;
+  source_scraping?: string;
+  indexation?: string;
+  chercheur_nom?: string;
+  citation_apa?: string;
+}
+
+interface SemanticSearchResponse {
+  total: number;
+  page: number;
+  results: PublicationWithScore[];
+  semantic: boolean;
+  fallback_message?: string;
+}
+
+const BASE_PUBLIC = "http://localhost:3001";
 
 const TYPE_FILTERS = [
   { key: "all",        label: "Toutes",              icon: Layers,     color: "blue"   },
@@ -28,7 +54,7 @@ const TYPE_BADGE: Record<string, string> = {
   "ouvrage":    "bg-green-50 text-green-700 border-green-200",
 };
 
-function buildAPA(p: any): string {
+function buildAPA(p: PublicationWithScore): string {
   const auteurs = p.auteurs || "";
   const annee   = p.annee || "s.d.";
   const titre   = p.titre || "";
@@ -40,7 +66,7 @@ function buildAPA(p: any): string {
   return ref;
 }
 
-function PubModal({ pub, onClose }: { pub: any; onClose: () => void }) {
+function PubModal({ pub, onClose }: { pub: PublicationWithScore; onClose: () => void }) {
   const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
   const apa = pub.citation_apa || buildAPA(pub);
@@ -122,16 +148,21 @@ function PubModal({ pub, onClose }: { pub: any; onClose: () => void }) {
 
 export function PublicationsPage() {
   const navigate = useNavigate();
-  const [items, setItems]         = useState<any[]>([]);
+  const [items, setItems]         = useState<PublicationWithScore[]>([]);
   const [total, setTotal]         = useState(0);
   const [loading, setLoading]     = useState(true);
+  const [searching, setSearching] = useState(false); // spinner in search bar
   const [search, setSearch]       = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [chercheurInput, setChercheurInput] = useState("");
   const [debouncedChercheur, setDebouncedChercheur] = useState("");
   const [page, setPage]           = useState(0);
-  const [selectedPub, setSelectedPub] = useState<any | null>(null);
+  const [selectedPub, setSelectedPub] = useState<PublicationWithScore | null>(null);
+  const [isSemantic, setIsSemantic] = useState(false);
+  const [fallbackMessage, setFallbackMessage] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const LIMIT = 20;
 
   // Debounce search
@@ -147,25 +178,76 @@ export function PublicationsPage() {
   }, [chercheurInput]);
 
   const load = useCallback(() => {
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (debouncedSearch) params.set("search", debouncedSearch);
-    if (typeFilter !== "all") params.set("type_filter", typeFilter);
-    if (debouncedChercheur) params.set("chercheur", debouncedChercheur);
-    params.set("limit", String(LIMIT));
-    params.set("offset", String(page * LIMIT));
+    // Cancel any in-flight request
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-    fetch(`${BASE}/api/public/articles?${params}`)
-      .then(r => r.json())
-      .then(data => { setItems(data.items || []); setTotal(data.total || 0); })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    const isFirstLoad = !debouncedSearch && !debouncedChercheur && typeFilter === "all" && page === 0;
+    if (isFirstLoad) setLoading(true);
+    else setSearching(true);
+
+    setSearchError(null);
+    setFallbackMessage(null);
+
+    const body = {
+      query: debouncedSearch,
+      type: typeFilter !== "all" ? typeFilter : undefined,
+      chercheur: debouncedChercheur || undefined,
+      page,
+      limit: LIMIT,
+    };
+
+    fetch(`${BASE_PUBLIC}/api/public/publications/search-semantic`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json() as Promise<SemanticSearchResponse>;
+      })
+      .then(data => {
+        setItems(data.results || []);
+        setTotal(data.total || 0);
+        setIsSemantic(data.semantic ?? false);
+        setFallbackMessage(data.fallback_message ?? null);
+      })
+      .catch(err => {
+        if (err.name === "AbortError") return;
+        console.error(err);
+        setSearchError("Erreur lors de la recherche. Veuillez réessayer.");
+      })
+      .finally(() => {
+        setLoading(false);
+        setSearching(false);
+      });
   }, [debouncedSearch, typeFilter, debouncedChercheur, page]);
 
   useEffect(() => { load(); }, [load]);
 
   const totalPages = Math.ceil(total / LIMIT);
   const activeFilter = TYPE_FILTERS.find(f => f.key === typeFilter);
+
+  function RelevanceBadge({ score, semantic }: { score?: number; semantic: boolean }) {
+    if (!semantic || score === undefined || score >= 1.0) return null;
+    if (score > 0.75) return (
+      <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 font-semibold">
+        Très pertinent
+      </span>
+    );
+    if (score >= 0.5) return (
+      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
+        Pertinent
+      </span>
+    );
+    return (
+      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200 font-semibold">
+        Possible
+      </span>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-cyan-50/30">
@@ -236,11 +318,13 @@ export function PublicationsPage() {
             <input type="text" placeholder="Rechercher par titre, auteur, journal..."
               value={search} onChange={e => setSearch(e.target.value)}
               className="w-full pl-12 pr-10 py-3.5 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-gray-50 focus:bg-white transition-all font-medium" />
-            {search && (
+            {searching ? (
+              <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-500 animate-spin" />
+            ) : search ? (
               <button onClick={() => setSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                 <X className="w-4 h-4" />
               </button>
-            )}
+            ) : null}
           </div>
 
           <div className="flex flex-wrap gap-6">
@@ -312,9 +396,22 @@ export function PublicationsPage() {
 
         {/* Results header */}
         <div className="flex items-center justify-between mb-5">
-          <p className="text-sm text-gray-500 font-medium">
-            <span className="font-bold text-gray-900 text-base">{total}</span> publication(s) trouvée(s)
-          </p>
+          <div>
+            <p className="text-sm text-gray-500 font-medium">
+              <span className="font-bold text-gray-900 text-base">{total}</span> publication(s) trouvée(s)
+              {isSemantic && debouncedSearch && (
+                <span className="ml-2 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 font-semibold">
+                  Recherche sémantique IA
+                </span>
+              )}
+            </p>
+            {fallbackMessage && (
+              <p className="text-xs text-amber-600 mt-1 font-medium">{fallbackMessage}</p>
+            )}
+            {searchError && (
+              <p className="text-xs text-red-500 mt-1 font-medium">{searchError}</p>
+            )}
+          </div>
           {totalPages > 1 && (
             <div className="flex items-center gap-2 bg-white rounded-xl border border-gray-200 px-3 py-1.5 shadow-sm">
               <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
@@ -389,6 +486,7 @@ export function PublicationsPage() {
                           <User className="w-3 h-3" />{pub.chercheur_nom}
                         </span>
                       )}
+                      <RelevanceBadge score={pub.score} semantic={isSemantic} />
                     </div>
                   </div>
                   <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">

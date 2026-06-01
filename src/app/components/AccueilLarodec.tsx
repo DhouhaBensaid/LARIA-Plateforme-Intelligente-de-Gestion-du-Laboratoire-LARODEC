@@ -3,68 +3,25 @@ import { useNavigate } from "react-router";
 import {
   Users, BookOpen, Globe, Award, TrendingUp, Target, Lightbulb,
   LogIn, UserPlus, ChevronRight, Mail, Phone, MapPin,
-  GraduationCap, Handshake, Menu, X, ExternalLink, Calendar,
+  GraduationCap, Handshake, Menu, X, ExternalLink, Calendar, FlaskConical,
 } from "lucide-react";
 import { AxeRecherche } from "./AxeRecherche";
 import logoLarodec from "../../imports/image-1.png";
 import drapeau from "../../imports/drapeau.png";
 import isg from "../../imports/isg.png";
-
-const NAV_ITEMS = [
-  { id: "laboratoire", label: "Laboratoire" },
-  { id: "actualites", label: "Actualités" },
-  { id: "membres",     label: "Membres"     },
-  { id: "recherche",   label: "Recherche"   },
-  { id: "liens",       label: "Liens"       },
-  { id: "contact",     label: "Contact"     },
-];
+import { useLang } from "../../lib/useLang";
+import { useCountUp } from "../../lib/useCountUp";
 
 const LIENS_UTILES = [
-  {
-    titre: "Ministère de l'Enseignement Supérieur et de la Recherche Scientifique",
-    description: "Portail officiel du ministère tunisien de l'enseignement supérieur",
-    url: "http://www.mes.tn/"
-  },
-  {
-    titre: "Thomson Reuters Impact Factor",
-    description: "Facteur d'impact et métriques de citation des revues scientifiques",
-    url: "http://wokinfo.com/essays/impact-factor/"
-  },
-  {
-    titre: "Ressources électroniques pour les chercheurs (CNUDST)",
-    description: "Accès aux ressources numériques et bases de données scientifiques",
-    url: "http://www.cnudst.rnrt.tn/"
-  },
-  {
-    titre: "Centre National Universitaire de Documentation Scientifique et Technique",
-    description: "Centre de documentation et d'information scientifique tunisien",
-    url: "http://www.cnudst.rnrt.tn/"
-  },
-  {
-    titre: "Moteur de recherche des thèses de doctorat en Tunisie",
-    description: "Plateforme de recherche et consultation des thèses tunisiennes",
-    url: "http://www.theses-tn.net/"
-  },
-  {
-    titre: "Appels d'offres de projets de recherche",
-    description: "Annonces et appels d'offres pour les projets de recherche",
-    url: "http://www.mes.tn/evenement_video.php?code_menu=113&code_menu_parent=28"
-  },
-  {
-    titre: "Université Virtuelle de Tunis (UVT)",
-    description: "Plateforme d'enseignement et de formation en ligne",
-    url: "http://www.uvt.rnu.tn/uvt/"
-  },
-  {
-    titre: "Agence Nationale de Promotion de la Recherche Scientifique (ANPR)",
-    description: "Agence de promotion et financement de la recherche scientifique",
-    url: "http://www.anpr.tn/index.php?id=12"
-  },
-  {
-    titre: "Belief Functions and Applications Society",
-    description: "Société internationale pour les fonctions de croyance et applications",
-    url: "http://www.bfasociety.org/"
-  }
+  { titre: "Ministère de l'Enseignement Supérieur et de la Recherche Scientifique", description: "Portail officiel du ministère tunisien de l'enseignement supérieur", url: "http://www.mes.tn/" },
+  { titre: "Thomson Reuters Impact Factor", description: "Facteur d'impact et métriques de citation des revues scientifiques", url: "http://wokinfo.com/essays/impact-factor/" },
+  { titre: "Ressources électroniques pour les chercheurs (CNUDST)", description: "Accès aux ressources numériques et bases de données scientifiques", url: "http://www.cnudst.rnrt.tn/" },
+  { titre: "Centre National Universitaire de Documentation Scientifique et Technique", description: "Centre de documentation et d'information scientifique tunisien", url: "http://www.cnudst.rnrt.tn/" },
+  { titre: "Moteur de recherche des thèses de doctorat en Tunisie", description: "Plateforme de recherche et consultation des thèses tunisiennes", url: "http://www.theses-tn.net/" },
+  { titre: "Appels d'offres de projets de recherche", description: "Annonces et appels d'offres pour les projets de recherche", url: "http://www.mes.tn/evenement_video.php?code_menu=113&code_menu_parent=28" },
+  { titre: "Université Virtuelle de Tunis (UVT)", description: "Plateforme d'enseignement et de formation en ligne", url: "http://www.uvt.rnu.tn/uvt/" },
+  { titre: "Agence Nationale de Promotion de la Recherche Scientifique (ANPR)", description: "Agence de promotion et financement de la recherche scientifique", url: "http://www.anpr.tn/index.php?id=12" },
+  { titre: "Belief Functions and Applications Society", description: "Société internationale pour les fonctions de croyance et applications", url: "http://www.bfasociety.org/" },
 ];
 
 function getPartners(convs: any[]): string[] {
@@ -80,9 +37,50 @@ function getPartners(convs: any[]): string[] {
   return r.length > 0 ? r : def;
 }
 
+// ── Stat card with count-up ──────────────────────────────────────────────────
+function StatCard({ icon: Icon, target, label, color, iconBg, iconColor, visible }: {
+  icon: any; target: number; label: string;
+  color: string; iconBg: string; iconColor: string; visible: boolean;
+}) {
+  const val = useCountUp(target, 1500, visible);
+  return (
+    <div className="group relative">
+      <div className={`absolute inset-0 bg-gradient-to-r ${color} rounded-2xl opacity-0 group-hover:opacity-10 transition-opacity duration-300 blur-xl`} />
+      <div className="relative bg-white rounded-2xl border border-gray-200 p-8 shadow-sm hover:shadow-xl transition-all duration-300 hover:scale-[1.03]">
+        <div className={`w-10 h-10 ${iconBg} rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300`}>
+          <Icon className={`w-5 h-5 ${iconColor}`} />
+        </div>
+        <p className={`text-5xl font-bold bg-gradient-to-r ${color} bg-clip-text text-transparent mb-1`}>{val}</p>
+        <p className="text-[13px] text-gray-500 font-semibold">{label}</p>
+        <div className={`mt-3 h-1 w-8 bg-gradient-to-r ${color} rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
+      </div>
+    </div>
+  );
+}
+
+// ── Language switcher ────────────────────────────────────────────────────────
+function LangSwitcher() {
+  const { lang, setLang } = useLang();
+  return (
+    <div className="flex items-center gap-1 bg-sky-100 rounded-lg p-0.5 border border-sky-200">
+      {(["fr", "en"] as const).map(l => (
+        <button
+          key={l}
+          onClick={() => setLang(l)}
+          className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
+            lang === l ? "bg-sky-700 text-white shadow-sm" : "text-sky-700 hover:bg-sky-200"
+          }`}
+        >
+          {l.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Contact card ─────────────────────────────────────────────────────────────
 function ContactCard() {
   const [showDetails, setShowDetails] = useState(false);
-
   return (
     <>
       <button
@@ -116,39 +114,27 @@ function ContactCard() {
         </div>
       </button>
 
-      {/* Modal détails */}
       {showDetails && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full overflow-hidden">
-            {/* Header */}
             <div className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white p-8 relative">
-              <button
-                onClick={() => setShowDetails(false)}
-                className="absolute top-6 right-6 p-2 hover:bg-white/20 rounded-lg transition-all"
-              >
+              <button onClick={() => setShowDetails(false)} className="absolute top-6 right-6 p-2 hover:bg-white/20 rounded-lg transition-all">
                 <X className="w-6 h-6" />
               </button>
               <h2 className="text-3xl font-bold mb-2">Localisation & Contact</h2>
               <p className="text-white/90">Institut Superieur de Gestion de Tunis</p>
             </div>
-
-            {/* Contenu */}
             <div className="p-8 space-y-8">
-              {/* Adresse */}
-              <div>
-                <div className="flex items-start gap-4 mb-4">
-                  <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <MapPin className="w-6 h-6 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Adresse</p>
-                    <p className="text-gray-900 font-bold text-lg">41 rue de la Liberté</p>
-                    <p className="text-gray-700 text-lg">2000 Le Bardo, Tunisie</p>
-                  </div>
+              <div className="flex items-start gap-4 mb-4">
+                <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <MapPin className="w-6 h-6 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">Adresse</p>
+                  <p className="text-gray-900 font-bold text-lg">41 rue de la Liberté</p>
+                  <p className="text-gray-700 text-lg">2000 Le Bardo, Tunisie</p>
                 </div>
               </div>
-
-              {/* Téléphone */}
               <div className="flex items-start gap-4 pb-8 border-b border-gray-200">
                 <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
                   <Phone className="w-6 h-6 text-blue-600" />
@@ -159,8 +145,6 @@ function ContactCard() {
                   <p className="text-gray-600 text-sm">Fax: (+216) 71 588 487</p>
                 </div>
               </div>
-
-              {/* Email */}
               <div className="space-y-3">
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Email</p>
                 <div className="space-y-2">
@@ -174,21 +158,10 @@ function ContactCard() {
                   </a>
                 </div>
               </div>
-
-              {/* Boutons d'action */}
               <div className="flex gap-3 pt-4 border-t border-gray-200">
-                <button
-                  onClick={() => setShowDetails(false)}
-                  className="flex-1 py-3 px-6 bg-gray-100 text-gray-900 rounded-xl font-bold hover:bg-gray-200 transition-all"
-                >
-                  Fermer
-                </button>
-                <a
-                  href="https://maps.google.com/?q=41+rue+de+la+Liberté,+2000+Le+Bardo,+Tunisie"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 py-3 px-6 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-xl font-bold hover:shadow-lg transition-all text-center"
-                >
+                <button onClick={() => setShowDetails(false)} className="flex-1 py-3 px-6 bg-gray-100 text-gray-900 rounded-xl font-bold hover:bg-gray-200 transition-all">Fermer</button>
+                <a href="https://maps.google.com/?q=41+rue+de+la+Liberté,+2000+Le+Bardo,+Tunisie" target="_blank" rel="noopener noreferrer"
+                  className="flex-1 py-3 px-6 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-xl font-bold hover:shadow-lg transition-all text-center">
                   Voir sur Google Maps
                 </a>
               </div>
@@ -200,16 +173,29 @@ function ContactCard() {
   );
 }
 
+// ── Main component ────────────────────────────────────────────────────────────
 export function AccueilLarodec() {
   const navigate = useNavigate();
+  const { lang, setLang, t } = useLang();
   const [activeSection, setActiveSection] = useState("laboratoire");
   const [menuOpen, setMenuOpen]           = useState(false);
   const [activeTab, setActiveTab]         = useState("partenaires");
-  const [stats, setStats]                 = useState<any>({ chercheurs: 53, publications: 881, conventions: 2 });
+  const [stats, setStats]                 = useState<any>({ chercheurs: 53, publications: 881, conventions: 2, projets: 0 });
   const [conventions, setConventions]     = useState<any[]>([]);
   const [events, setEvents]               = useState<any[]>([]);
   const [memberStats, setMemberStats]     = useState<any>({ "Corps A": 17, "Corps B": 36, "Doctorant": 32, "Post-Doc": 48 });
+  const [statsVisible, setStatsVisible]   = useState(false);
+  const statsRef = useRef<HTMLElement | null>(null);
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
+
+  const NAV_ITEMS = [
+    { id: "laboratoire", label: t.nav.laboratoire },
+    { id: "actualites",  label: t.nav.actualites  },
+    { id: "membres",     label: t.nav.membres     },
+    { id: "recherche",   label: t.nav.recherche   },
+    { id: "liens",       label: t.nav.liens       },
+    { id: "contact",     label: t.nav.contact     },
+  ];
 
   useEffect(() => {
     const B = "http://localhost:3001/api";
@@ -226,6 +212,7 @@ export function AccueilLarodec() {
     });
   }, []);
 
+  // IntersectionObserver for nav highlight
   useEffect(() => {
     const obs = new IntersectionObserver(
       entries => entries.forEach(e => { if (e.isIntersecting) setActiveSection(e.target.id); }),
@@ -235,37 +222,41 @@ export function AccueilLarodec() {
     return () => obs.disconnect();
   }, []);
 
+  // IntersectionObserver for stats count-up
+  useEffect(() => {
+    if (!statsRef.current) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setStatsVisible(true); },
+      { threshold: 0.3 }
+    );
+    obs.observe(statsRef.current);
+    return () => obs.disconnect();
+  }, []);
+
   const scrollTo = (id: string) => {
-    if (id === "recherche") {
-      navigate("/publications");
-      return;
-    }
+    if (id === "recherche") { navigate("/publications"); return; }
     sectionRefs.current[id]?.scrollIntoView({ behavior: "smooth" });
     setMenuOpen(false);
   };
-  const partners = getPartners(conventions);
+
   const ref = (id: string) => (el: HTMLElement | null) => { sectionRefs.current[id] = el; };
+  const partners = getPartners(conventions);
+
+  const statCards = [
+    { icon: Users,         target: stats.chercheurs    || 53,  label: t.stats.chercheurs,   color: "from-blue-600 to-blue-400",      iconBg: "bg-blue-100",    iconColor: "text-blue-600"    },
+    { icon: BookOpen,      target: stats.publications  || 881, label: t.stats.publications, color: "from-emerald-600 to-emerald-400", iconBg: "bg-emerald-100", iconColor: "text-emerald-600" },
+    { icon: GraduationCap, target: memberStats["Doctorant"] || 32, label: t.stats.doctorants, color: "from-purple-600 to-purple-400", iconBg: "bg-purple-100",  iconColor: "text-purple-600"  },
+    { icon: Handshake,     target: stats.conventions   || 2,   label: t.stats.conventions,  color: "from-orange-600 to-orange-400",  iconBg: "bg-orange-100",  iconColor: "text-orange-600"  },
+    ...(stats.projets ? [{ icon: FlaskConical, target: stats.projets, label: t.stats.projets, color: "from-teal-600 to-teal-400", iconBg: "bg-teal-100", iconColor: "text-teal-600" }] : []),
+  ];
 
   return (
     <div className="min-h-screen bg-white">
 
-      {/* ── Bandeau institutionnel tunisien ── */}
+      {/* ── Bandeau institutionnel ── */}
       <div className="relative border-b border-gray-200 py-2 px-6 flex items-center justify-between text-xs overflow-hidden" style={{ minHeight: 44 }}>
-        {/* Drapeau tunisien en arrière-plan, très discret */}
-        <div
-          className="absolute inset-0 opacity-[0.06] bg-no-repeat bg-center bg-contain pointer-events-none"
-          style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 900 600'%3E%3Crect width='900' height='600' fill='%23E70013'/%3E%3Ccircle cx='450' cy='300' r='160' fill='white'/%3E%3Ccircle cx='480' cy='300' r='128' fill='%23E70013'/%3E%3Ccircle cx='440' cy='268' r='80' fill='white'/%3E%3Ccircle cx='464' cy='268' r='64' fill='%23E70013'/%3E%3Cpolygon points='490,220 500,250 530,250 507,267 516,298 490,280 464,298 473,267 450,250 480,250' fill='white'/%3E%3C/svg%3E")`,
-            backgroundSize: "120px",
-            backgroundRepeat: "repeat-x",
-          }}
-        />
-        {/* Fond blanc légèrement teinté */}
         <div className="absolute inset-0 bg-white/95 pointer-events-none" />
-
-        {/* Contenu texte en noir */}
         <div className="relative flex items-center gap-3">
-          {/* Drapeau tunisien */}
           <img src={drapeau} alt="Drapeau Tunisie" className="h-8 object-contain" />
           <span className="font-semibold text-gray-800 hidden md:block">
             REPUBLIQUE TUNISIENNE &nbsp;·&nbsp; MINISTERE DE L'ENSEIGNEMENT SUPERIEUR &nbsp;·&nbsp; UNIVERSITE DE TUNIS
@@ -278,71 +269,55 @@ export function AccueilLarodec() {
         </div>
       </div>
 
-      {/* ── Navigation — bleu ciel sobre ── */}
+      {/* ── Navigation ── */}
       <nav className="sticky top-0 z-50 shadow-sm border-b border-sky-200" style={{ background: "#e0f2fe" }}>
         <div className="max-w-7xl mx-auto px-4 flex items-center">
-
-          {/* Liens desktop */}
           <div className="hidden md:flex items-center">
             {NAV_ITEMS.map(item => (
-              <button
-                key={item.id}
-                onClick={() => scrollTo(item.id)}
+              <button key={item.id} onClick={() => scrollTo(item.id)}
                 className={`px-5 py-3.5 text-sm font-semibold transition-all ${
                   activeSection === item.id
                     ? "text-sky-800 border-b-2 border-sky-700 bg-sky-100"
                     : "text-sky-700 hover:text-sky-900 hover:bg-sky-100"
-                }`}
-              >
+                }`}>
                 {item.label}
               </button>
             ))}
           </div>
-
-          {/* Burger mobile */}
           <button className="md:hidden ml-auto p-3 text-sky-700" onClick={() => setMenuOpen(!menuOpen)}>
             {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
-
-          {/* Boutons auth */}
           <div className="hidden md:flex items-center gap-2 ml-auto pl-4 border-l border-sky-300">
-            <span className="text-xs font-semibold text-sky-700 mr-2">Espace Membre</span>
-            <button
-              onClick={() => navigate("/login")}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm text-sky-700 hover:text-sky-900 hover:bg-sky-100 rounded-lg transition-all font-medium"
-            >
-              <LogIn className="w-4 h-4" /> Connexion
+            <LangSwitcher />
+            <span className="text-xs font-semibold text-sky-700 ml-2 mr-1">{t.nav.espaceMembers}</span>
+            <button onClick={() => navigate("/login")}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm text-sky-700 hover:text-sky-900 hover:bg-sky-100 rounded-lg transition-all font-medium">
+              <LogIn className="w-4 h-4" /> {t.nav.connexion}
             </button>
-            <button
-              onClick={() => navigate("/login?register=true")}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-sky-700 text-white rounded-lg hover:bg-sky-800 transition-all font-semibold shadow-sm"
-            >
-              <UserPlus className="w-4 h-4" /> Inscription
+            <button onClick={() => navigate("/login?register=true")}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-sky-700 text-white rounded-lg hover:bg-sky-800 transition-all font-semibold shadow-sm">
+              <UserPlus className="w-4 h-4" /> {t.nav.inscription}
             </button>
           </div>
         </div>
-
-        {/* Mobile menu */}
         {menuOpen && (
           <div className="md:hidden border-t border-sky-200 bg-sky-50">
             {NAV_ITEMS.map(item => (
-              <button
-                key={item.id}
-                onClick={() => scrollTo(item.id)}
-                className="w-full text-left px-6 py-3 text-sm text-sky-800 hover:bg-sky-100 font-medium"
-              >
+              <button key={item.id} onClick={() => scrollTo(item.id)}
+                className="w-full text-left px-6 py-3 text-sm text-sky-800 hover:bg-sky-100 font-medium">
                 {item.label}
               </button>
             ))}
-            <div className="flex gap-2 px-4 py-3 border-t border-sky-200">
-              <button onClick={() => navigate("/login")} className="flex-1 py-2 text-sm text-center text-sky-700 hover:bg-sky-100 rounded-lg font-medium">Connexion</button>
-              <button onClick={() => navigate("/login?register=true")} className="flex-1 py-2 text-sm text-center bg-sky-700 text-white rounded-lg font-semibold">Inscription</button>
+            <div className="flex gap-2 px-4 py-3 border-t border-sky-200 items-center">
+              <LangSwitcher />
+              <button onClick={() => navigate("/login")} className="flex-1 py-2 text-sm text-center text-sky-700 hover:bg-sky-100 rounded-lg font-medium">{t.nav.connexion}</button>
+              <button onClick={() => navigate("/login?register=true")} className="flex-1 py-2 text-sm text-center bg-sky-700 text-white rounded-lg font-semibold">{t.nav.inscription}</button>
             </div>
           </div>
         )}
       </nav>
 
-      {/* ── Hero / Laboratoire — sans carte "Excellence" ── */}
+      {/* ── Hero / Laboratoire ── */}
       <section id="laboratoire" ref={ref("laboratoire")}
         className="bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 py-20 px-6 relative overflow-hidden">
         <div className="absolute inset-0 opacity-30 pointer-events-none">
@@ -350,37 +325,54 @@ export function AccueilLarodec() {
           <div className="absolute bottom-10 left-20 w-72 h-72 bg-cyan-200 rounded-full blur-3xl" />
         </div>
         <div className="max-w-6xl mx-auto relative">
-          {/* Texte centré puisqu'on retire la carte de droite */}
           <div className="max-w-3xl">
+            {/* Logo animé */}
             <div className="flex items-start gap-4 mb-8">
-              <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-3xl flex items-center justify-center flex-shrink-0 shadow-lg">
+              <div
+                className="w-20 h-20 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-3xl flex items-center justify-center flex-shrink-0 shadow-lg"
+                style={{
+                  animation: "larodec-logo-in 0.6s cubic-bezier(0.22,1,0.36,1) both",
+                }}
+              >
                 <BookOpen className="w-10 h-10 text-white" />
               </div>
-              <div>
+              <div style={{ animation: "larodec-logo-in 0.6s 0.1s cubic-bezier(0.22,1,0.36,1) both" }}>
                 <h1 className="text-5xl font-bold mb-2 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
                   LARODEC
                 </h1>
-                <p className="text-lg font-semibold text-gray-700">Laboratoire de Recherche</p>
+                <p className="text-lg font-semibold text-gray-700">{t.hero.subtitle}</p>
               </div>
             </div>
-            <p className="text-gray-600 text-xl leading-relaxed mb-4">
-              Recherche Operationnelle, Aide a la Decision et Processus de Controle
-            </p>
-            <p className="text-gray-500 leading-relaxed mb-8 max-w-2xl">
-              Unite de recherche de reference affiliee a l Institut Superieur de Gestion de Tunis (ISG),
-              Universite de Tunis. Nos travaux couvrent la recherche operationnelle, l aide a la decision
-              multicritere et le controle de processus.
-            </p>
+            <p className="text-gray-600 text-xl leading-relaxed mb-4">{t.hero.tagline}</p>
+            <p className="text-gray-500 leading-relaxed mb-8 max-w-2xl">{t.hero.description}</p>
             <div className="flex flex-wrap gap-3">
-              {["Code: LR01ES02", "ISG · Universite de Tunis", "Dir: Pr. Latifa Ben Arfa Rabai"].map(tag => (
-                <span key={tag} className="px-4 py-2 bg-white rounded-full text-sm font-medium text-gray-700 border border-gray-200 shadow-sm">
-                  {tag}
-                </span>
-              ))}
+              <span className="px-4 py-2 bg-white rounded-full text-sm font-medium text-gray-700 border border-gray-200 shadow-sm">Code: LR01ES02</span>
+              <span className="px-4 py-2 bg-white rounded-full text-sm font-medium text-gray-700 border border-gray-200 shadow-sm">ISG · Universite de Tunis</span>
+              {/* Badge Dir cliquable */}
+              <button
+                onClick={() => navigate("/public/researcher/Latifa%20Ben%20Arfa%20Rabai")}
+                className="px-4 py-2 bg-white rounded-full text-sm font-medium text-blue-700 border border-blue-200 shadow-sm hover:bg-blue-50 hover:border-blue-400 transition-all flex items-center gap-1.5"
+              >
+                Dir: Pr. Latifa Ben Arfa Rabai
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
         </div>
       </section>
+
+      {/* Animation keyframes (injected once) */}
+      <style>{`
+        @media (prefers-reduced-motion: no-preference) {
+          @keyframes larodec-logo-in {
+            from { opacity: 0; transform: translateY(18px); }
+            to   { opacity: 1; transform: translateY(0);    }
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          @keyframes larodec-logo-in { from { opacity:1; } to { opacity:1; } }
+        }
+      `}</style>
 
       {/* ── Actualités ── */}
       <section id="actualites" ref={ref("actualites")} className="py-20 px-6 bg-gradient-to-b from-white via-blue-50 to-white">
@@ -388,127 +380,83 @@ export function AccueilLarodec() {
           <div className="mb-12">
             <div className="flex items-center gap-3 mb-4">
               <Calendar className="w-8 h-8 text-blue-600" />
-              <h2 className="text-4xl font-bold text-gray-900">Actualités</h2>
+              <h2 className="text-4xl font-bold text-gray-900">{t.events.title}</h2>
             </div>
-            <p className="text-gray-600 text-lg">Événements et actualités du laboratoire</p>
+            <p className="text-gray-600 text-lg">{t.events.subtitle}</p>
             <div className="mt-4 h-1 w-20 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-full" />
           </div>
 
           {events.length > 0 ? (
             <div className="space-y-8">
-              {/* Featured Event */}
-              {events.length > 0 && (
-                <button
-                  onClick={() => navigate(`/evenement/${events[0].id}`)}
-                  className="group w-full text-left"
-                >
-                  <div className="relative overflow-hidden rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-2">
-                    {/* Background with image or gradient */}
-                    {events[0].url_photo ? (
-                      <img 
-                        src={events[0].url_photo}
-                        alt={events[0].titre}
-                        className="absolute inset-0 w-full h-full object-cover"
-                        style={{
-                          filter: 'brightness(1.1) contrast(1.15) saturate(1.1) blur(0px)',
-                          WebkitFontSmoothing: 'antialiased',
-                          backfaceVisibility: 'hidden',
-                        }}
-                        loading="eager"
-                        decoding="async"
-                      />
-                    ) : (
-                      <div className="absolute inset-0 bg-gradient-to-br from-blue-600 via-blue-500 to-cyan-600" />
-                    )}
-                    
-                    {/* Dark overlay for text readability */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/60 to-black/50" />
-                    
-                    {/* Content */}
-                    <div className="relative p-8 md:p-12 text-white">
-                      <div className="flex items-start justify-between gap-6 mb-6">
-                        <div className="flex-1">
-                          <div className="inline-block px-4 py-2 bg-white/30 backdrop-blur-md rounded-full mb-4">
-                            <span className="text-sm font-bold text-white drop-shadow-lg">Événement à la une</span>
-                          </div>
-                          <h3 className="text-3xl md:text-4xl font-bold mb-3 leading-tight group-hover:text-white transition-colors drop-shadow-lg">
-                            {events[0].titre}
-                          </h3>
-                          <p className="text-white text-lg leading-relaxed max-w-2xl line-clamp-3 drop-shadow-md font-medium">
-                            {events[0].description}
-                          </p>
+              <button onClick={() => navigate(`/evenement/${events[0].id}`)} className="group w-full text-left">
+                <div className="relative overflow-hidden rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-2">
+                  {events[0].url_photo ? (
+                    <img src={events[0].url_photo} alt={events[0].titre}
+                      className="absolute inset-0 w-full h-full object-cover"
+                      style={{ filter: "brightness(1.1) contrast(1.15) saturate(1.1)" }}
+                      loading="eager" decoding="async" />
+                  ) : (
+                    <div className="absolute inset-0 bg-gradient-to-br from-blue-600 via-blue-500 to-cyan-600" />
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/60 to-black/50" />
+                  <div className="relative p-8 md:p-12 text-white">
+                    <div className="flex items-start justify-between gap-6 mb-6">
+                      <div className="flex-1">
+                        <div className="inline-block px-4 py-2 bg-white/30 backdrop-blur-md rounded-full mb-4">
+                          <span className="text-sm font-bold text-white drop-shadow-lg">{t.events.featured}</span>
                         </div>
-                        <div className="flex-shrink-0 hidden md:block">
-                          <div className="w-24 h-24 bg-white/30 backdrop-blur-md rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                            <Calendar className="w-12 h-12 text-white drop-shadow-lg" />
-                          </div>
-                        </div>
+                        <h3 className="text-3xl md:text-4xl font-bold mb-3 leading-tight drop-shadow-lg">{events[0].titre}</h3>
+                        <p className="text-white text-lg leading-relaxed max-w-2xl line-clamp-3 drop-shadow-md font-medium">{events[0].description}</p>
                       </div>
-                      
-                      {/* Date and CTA */}
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-6 border-t border-white/30">
-                        <div>
-                          {events[0].date_debut && (
-                            <p className="text-white text-sm font-semibold mb-1 drop-shadow-md">Date</p>
-                          )}
-                          {events[0].date_debut && (
-                            <p className="text-white font-bold text-lg drop-shadow-lg">
-                              {new Date(events[0].date_debut).toLocaleDateString('fr-FR', {
-                                weekday: 'long',
-                                year: 'numeric',
-                                month: 'long',
-                                day: 'numeric',
-                              })}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3 text-white font-bold group-hover:gap-4 transition-all drop-shadow-lg">
-                          <span>Savoir plus</span>
-                          <ChevronRight className="w-5 h-5" />
+                      <div className="flex-shrink-0 hidden md:block">
+                        <div className="w-24 h-24 bg-white/30 backdrop-blur-md rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                          <Calendar className="w-12 h-12 text-white drop-shadow-lg" />
                         </div>
                       </div>
                     </div>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-6 border-t border-white/30">
+                      <div>
+                        {events[0].date_debut && (
+                          <>
+                            <p className="text-white text-sm font-semibold mb-1 drop-shadow-md">{t.events.date}</p>
+                            <p className="text-white font-bold text-lg drop-shadow-lg">
+                              {new Date(events[0].date_debut).toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+                            </p>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 text-white font-bold group-hover:gap-4 transition-all drop-shadow-lg">
+                        <span>{t.events.more}</span>
+                        <ChevronRight className="w-5 h-5" />
+                      </div>
+                    </div>
                   </div>
-                </button>
-              )}
+                </div>
+              </button>
 
-              {/* Other Events Grid */}
               {events.length > 1 && (
                 <div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-6">Autres événements</h3>
+                  <h3 className="text-xl font-bold text-gray-900 mb-6">{t.events.others}</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {events.slice(1, 7).map((event: any, i: number) => (
-                      <button
-                        key={i}
-                        onClick={() => navigate(`/evenement/${event.id}`)}
-                        className="group bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 text-left"
-                      >
+                      <button key={i} onClick={() => navigate(`/evenement/${event.id}`)}
+                        className="group bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-1 text-left">
                         <div className="bg-gradient-to-r from-blue-500 to-cyan-500 h-3" />
                         <div className="p-6">
                           <div className="flex items-start gap-3 mb-3">
                             <Calendar className="w-5 h-5 text-blue-600 flex-shrink-0 mt-1" />
                             <div className="flex-1">
-                              <h4 className="font-bold text-gray-900 text-base mb-1 leading-snug group-hover:text-blue-600 transition-colors line-clamp-2">
-                                {event.titre}
-                              </h4>
+                              <h4 className="font-bold text-gray-900 text-base mb-1 leading-snug group-hover:text-blue-600 transition-colors line-clamp-2">{event.titre}</h4>
                               {event.date_debut && (
                                 <p className="text-xs text-gray-500 font-medium">
-                                  {new Date(event.date_debut).toLocaleDateString('fr-FR', {
-                                    weekday: 'short',
-                                    month: 'short',
-                                    day: 'numeric',
-                                  })}
+                                  {new Date(event.date_debut).toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", { weekday: "short", month: "short", day: "numeric" })}
                                 </p>
                               )}
                             </div>
                           </div>
-                          {event.description && (
-                            <p className="text-sm text-gray-600 leading-relaxed line-clamp-2 mb-4">
-                              {event.description}
-                            </p>
-                          )}
+                          {event.description && <p className="text-sm text-gray-600 leading-relaxed line-clamp-2 mb-4">{event.description}</p>}
                           <div className="flex items-center gap-2 text-blue-600 text-sm font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
-                            <span>Détails</span>
+                            <span>{t.events.details}</span>
                             <ChevronRight className="w-4 h-4" />
                           </div>
                         </div>
@@ -521,42 +469,24 @@ export function AccueilLarodec() {
           ) : (
             <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
               <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-600">Aucun événement pour le moment</p>
+              <p className="text-gray-600">{t.events.empty}</p>
             </div>
           )}
         </div>
       </section>
 
-      {/* ── Stats ── */}
-      <section className="bg-gradient-to-b from-white via-blue-50 to-cyan-50 border-b border-gray-100 py-16 px-6">
+      {/* ── Stats avec count-up ── */}
+      <section ref={el => { statsRef.current = el; }} className="bg-gradient-to-b from-white via-blue-50 to-cyan-50 border-b border-gray-100 py-16 px-6">
         <div className="max-w-6xl mx-auto">
           <div className="mb-12">
-            <h2 className="text-4xl font-bold text-gray-900 mb-3">LARODEC en chiffres</h2>
-            <p className="text-gray-600 text-lg">Nos accomplissements et notre impact scientifique</p>
+            <h2 className="text-4xl font-bold text-gray-900 mb-3">{t.stats.title}</h2>
+            <p className="text-gray-600 text-lg">{t.stats.subtitle}</p>
             <div className="mt-4 h-1 w-20 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-full" />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              { icon: Users,         val: stats.chercheurs    || 53,  label: "Chercheurs",   color: "from-blue-600 to-blue-400",   icon_bg: "bg-blue-100",   icon_color: "text-blue-600"   },
-              { icon: BookOpen,      val: stats.publications  || 881, label: "Publications", color: "from-emerald-600 to-emerald-400",icon_bg: "bg-emerald-100", icon_color: "text-emerald-600"},
-              { icon: GraduationCap, val: memberStats["Doctorant"] || 32, label: "Doctorants", color: "from-purple-600 to-purple-400",icon_bg: "bg-purple-100", icon_color: "text-purple-600" },
-              { icon: Handshake,     val: stats.conventions   || 2,   label: "Conventions",  color: "from-orange-600 to-orange-400", icon_bg: "bg-orange-100", icon_color: "text-orange-600" },
-            ].map((s, i) => {
-              const Icon = s.icon;
-              return (
-                <div key={i} className="group relative">
-                  <div className={`absolute inset-0 bg-gradient-to-r ${s.color} rounded-2xl opacity-0 group-hover:opacity-10 transition-opacity duration-300 blur-xl`} />
-                  <div className="relative bg-white rounded-2xl border border-gray-200 p-8 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
-                    <div className={`w-14 h-14 ${s.icon_bg} rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300`}>
-                      <Icon className={`w-7 h-7 ${s.icon_color}`} />
-                    </div>
-                    <p className={`text-5xl font-bold bg-gradient-to-r ${s.color} bg-clip-text text-transparent mb-2`}>{s.val}</p>
-                    <p className="text-sm text-gray-600 font-semibold">{s.label}</p>
-                    <div className={`mt-4 h-1 w-8 bg-gradient-to-r ${s.color} rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
-                  </div>
-                </div>
-              );
-            })}
+          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-6 ${statCards.length === 5 ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
+            {statCards.map((s, i) => (
+              <StatCard key={i} {...s} visible={statsVisible} />
+            ))}
           </div>
         </div>
       </section>
@@ -565,25 +495,21 @@ export function AccueilLarodec() {
       <section id="membres" ref={ref("membres")} className="py-16 px-6 bg-gradient-to-b from-white to-blue-50">
         <div className="max-w-6xl mx-auto">
           <div className="mb-12">
-            <h2 className="text-4xl font-bold text-gray-900 mb-3">Equipe de recherche</h2>
-            <p className="text-gray-600 text-lg">Membres permanents, doctorants et post-doctorants</p>
+            <h2 className="text-4xl font-bold text-gray-900 mb-3">{t.members.title}</h2>
+            <p className="text-gray-600 text-lg">{t.members.subtitle}</p>
             <div className="mt-4 h-1 w-20 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-full" />
           </div>
-          
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
             {[
-              { label: "Conseil Scientifique",  val: memberStats["Corps A"]   || 17, icon: Award,          teamKey: "Corps A" },
-              { label: "Maitres Assistants",    val: memberStats["Corps B"]   || 36, icon: Users,          teamKey: "Corps B" },
-              { label: "Doctorants",            val: memberStats["Doctorant"] || 32, icon: GraduationCap,  teamKey: "Doctorant" },
-              { label: "Post-Doctorants",       val: memberStats["Post-Doc"]  || 48, icon: TrendingUp,     teamKey: "Post-Doc" },
+              { label: t.members.conseilScientifique, val: memberStats["Corps A"]   || 17, icon: Award,         teamKey: "Corps A"   },
+              { label: t.members.maitresAssistants,   val: memberStats["Corps B"]   || 36, icon: Users,         teamKey: "Corps B"   },
+              { label: t.members.doctorants,          val: memberStats["Doctorant"] || 32, icon: GraduationCap, teamKey: "Doctorant" },
+              { label: t.members.postDoc,             val: memberStats["Post-Doc"]  || 48, icon: TrendingUp,    teamKey: "Post-Doc"  },
             ].map((m, i) => {
               const Icon = m.icon;
               return (
-                <button
-                  key={i}
-                  onClick={() => navigate(`/annuaire?categorie=${m.teamKey}`)}
-                  className="group relative text-left transition-all duration-300 hover:-translate-y-1"
-                >
+                <button key={i} onClick={() => navigate(`/annuaire?categorie=${m.teamKey}`)}
+                  className="group relative text-left transition-all duration-300 hover:-translate-y-1">
                   <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-2xl opacity-0 group-hover:opacity-10 transition-opacity duration-300 blur-xl" />
                   <div className="relative bg-white rounded-2xl border border-gray-200 p-8 shadow-sm hover:shadow-xl transition-all duration-300">
                     <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
@@ -611,32 +537,14 @@ export function AccueilLarodec() {
             <p className="text-gray-600 text-lg">Collaborations nationales et internationales, ressources pour la recherche</p>
             <div className="mt-4 h-1 w-20 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-full" />
           </div>
-
-          {/* Tabs */}
           <div className="flex gap-4 mb-12 border-b border-gray-200">
-            <button
-              onClick={() => setActiveTab("partenaires")}
-              className={`px-6 py-3 font-bold transition-all ${
-                activeTab === "partenaires"
-                  ? "text-blue-600 border-b-2 border-blue-600"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Partenaires
-            </button>
-            <button
-              onClick={() => setActiveTab("liens")}
-              className={`px-6 py-3 font-bold transition-all ${
-                activeTab === "liens"
-                  ? "text-blue-600 border-b-2 border-blue-600"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Liens Utiles
-            </button>
+            {["partenaires", "liens"].map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)}
+                className={`px-6 py-3 font-bold transition-all capitalize ${activeTab === tab ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-600 hover:text-gray-900"}`}>
+                {tab === "partenaires" ? "Partenaires" : "Liens Utiles"}
+              </button>
+            ))}
           </div>
-
-          {/* Partenaires */}
           {activeTab === "partenaires" && (
             <div className="space-y-6">
               <p className="text-gray-700 text-lg leading-relaxed mb-8">
@@ -654,25 +562,16 @@ export function AccueilLarodec() {
               </div>
             </div>
           )}
-
-          {/* Liens Utiles */}
           {activeTab === "liens" && (
             <div className="space-y-4">
               {LIENS_UTILES.map((lien, i) => (
-                <a
-                  key={i}
-                  href={lien.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group flex items-start gap-4 p-5 bg-white border border-gray-200 rounded-2xl hover:border-blue-300 hover:shadow-lg transition-all duration-300"
-                >
+                <a key={i} href={lien.url} target="_blank" rel="noopener noreferrer"
+                  className="group flex items-start gap-4 p-5 bg-white border border-gray-200 rounded-2xl hover:border-blue-300 hover:shadow-lg transition-all duration-300">
                   <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
                     <ExternalLink className="w-6 h-6 text-blue-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors text-base mb-1">
-                      {lien.titre}
-                    </h3>
+                    <h3 className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors text-base mb-1">{lien.titre}</h3>
                     <p className="text-sm text-gray-600 mb-2">{lien.description}</p>
                     <p className="text-xs text-gray-500 truncate">{lien.url}</p>
                   </div>
@@ -691,10 +590,7 @@ export function AccueilLarodec() {
         <div className="max-w-6xl mx-auto">
           <h2 className="text-3xl font-bold text-gray-900 mb-12">Contact et Accès</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Carte de contact interactive */}
             <ContactCard />
-
-            {/* Accès au portail */}
             <div className="bg-gradient-to-br from-blue-600 to-cyan-600 rounded-3xl p-8 text-white shadow-lg flex flex-col justify-between">
               <div>
                 <h3 className="font-bold text-2xl mb-3">Acceder au portail</h3>
@@ -703,13 +599,11 @@ export function AccueilLarodec() {
                 </p>
               </div>
               <div className="flex gap-3">
-                <button onClick={() => navigate("/login")}
-                  className="flex-1 py-3 bg-white text-blue-600 rounded-xl text-sm font-bold hover:bg-blue-50 transition-all duration-300">
-                  Se connecter
+                <button onClick={() => navigate("/login")} className="flex-1 py-3 bg-white text-blue-600 rounded-xl text-sm font-bold hover:bg-blue-50 transition-all duration-300">
+                  {t.nav.connexion}
                 </button>
-                <button onClick={() => navigate("/login?register=true")}
-                  className="flex-1 py-3 bg-blue-500 text-white rounded-xl text-sm font-bold hover:bg-blue-400 transition-all duration-300 border border-blue-400">
-                  S inscrire
+                <button onClick={() => navigate("/login?register=true")} className="flex-1 py-3 bg-blue-500 text-white rounded-xl text-sm font-bold hover:bg-blue-400 transition-all duration-300 border border-blue-400">
+                  {t.nav.inscription}
                 </button>
               </div>
             </div>
@@ -730,8 +624,7 @@ export function AccueilLarodec() {
             </div>
             <div className="flex flex-wrap gap-4 text-sm">
               {NAV_ITEMS.map(item => (
-                <button key={item.id} onClick={() => scrollTo(item.id)}
-                  className="text-gray-400 hover:text-white transition-colors font-medium">
+                <button key={item.id} onClick={() => scrollTo(item.id)} className="text-gray-400 hover:text-white transition-colors font-medium">
                   {item.label}
                 </button>
               ))}

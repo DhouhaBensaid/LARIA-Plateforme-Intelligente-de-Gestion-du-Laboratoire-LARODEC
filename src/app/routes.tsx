@@ -20,6 +20,7 @@ import { ScraperPublications } from "./components/ScraperPublications";
 import { MesTheses } from "./components/MesTheses";
 import { EvenementDetail } from "./components/EvenementDetail";
 import { PublicationsPage } from "./components/PublicationsPage";
+import { CvChercheur } from "./components/CvChercheur";
 
 export const router = createBrowserRouter([
   {
@@ -68,9 +69,9 @@ export const router = createBrowserRouter([
     children: [
       { index: true, Component: DashboardChercheur },
       { path: "contributions", Component: MesContributions },
-      { path: "publications", Component: GestionPublications },
       { path: "theses", Component: MesTheses },
       { path: "evenements", Component: GestionEvenements },
+      { path: "cv", Component: CvChercheur },
       { path: "profil", Component: ProfilChercheur },
     ],
   },

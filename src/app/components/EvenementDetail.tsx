@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router";
-import { ArrowLeft, Calendar, MapPin, Clock, Share2, Heart } from "lucide-react";
+import { ArrowLeft, Calendar, MapPin, Clock, Share2, Heart, ExternalLink } from "lucide-react";
+import { useLang } from "../../lib/useLang";
 
 export function EvenementDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { lang, t } = useLang();
   const [event, setEvent] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [liked, setLiked] = useState(false);
@@ -82,7 +84,7 @@ export function EvenementDetail() {
             className="flex items-center gap-2 w-fit hover:bg-white/20 px-4 py-2 rounded-lg transition-all backdrop-blur-sm"
           >
             <ArrowLeft className="w-5 h-5 text-white" />
-            <span className="text-white font-semibold">Retour</span>
+            <span className="text-white font-semibold">{t.eventDetail.back}</span>
           </button>
           
           <div>
@@ -111,17 +113,17 @@ export function EvenementDetail() {
                 }`}
               >
                 <Heart className={`w-5 h-5 ${liked ? 'fill-current' : ''}`} />
-                <span>{liked ? 'Aimé' : 'Aimer'}</span>
+                <span>{liked ? t.eventDetail.liked : t.eventDetail.like}</span>
               </button>
               <button className="flex items-center gap-2 px-6 py-3 bg-gray-100 text-gray-600 rounded-xl font-semibold hover:bg-gray-200 transition-all">
                 <Share2 className="w-5 h-5" />
-                <span>Partager</span>
+                <span>{t.eventDetail.share}</span>
               </button>
             </div>
 
             {/* Description */}
             <div className="bg-white rounded-2xl shadow-md p-8 border border-gray-100">
-              <h2 className="text-3xl font-bold text-gray-900 mb-6">À propos de cet événement</h2>
+              <h2 className="text-3xl font-bold text-gray-900 mb-6">{t.eventDetail.about}</h2>
               <p className="text-gray-700 text-lg leading-relaxed whitespace-pre-wrap font-medium">
                 {event.description}
               </p>
@@ -130,19 +132,37 @@ export function EvenementDetail() {
             {/* Informations pratiques */}
             {event.lieu && (
               <div className="bg-white rounded-2xl shadow-md p-8 border border-gray-100">
-                <h3 className="text-2xl font-bold text-gray-900 mb-6">Informations pratiques</h3>
+                <h3 className="text-2xl font-bold text-gray-900 mb-6">{t.eventDetail.practical}</h3>
                 <div className="space-y-6">
                   <div className="flex items-start gap-4">
                     <div className="w-14 h-14 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-xl flex items-center justify-center flex-shrink-0">
                       <MapPin className="w-7 h-7 text-blue-600" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-gray-500 mb-1">LIEU</p>
-                      <p className="text-gray-900 font-bold text-lg">{event.lieu}</p>
+                      <p className="text-sm font-semibold text-gray-500 mb-1">{t.eventDetail.lieu}</p>
+                      {/* Lieu cliquable → Google Maps */}
+                      <a
+                        href={`https://maps.google.com/?q=${encodeURIComponent(event.lieu)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-700 font-bold text-lg hover:underline flex items-center gap-1.5"
+                      >
+                        {event.lieu}
+                        <ExternalLink className="w-4 h-4 flex-shrink-0" />
+                      </a>
                     </div>
                   </div>
                 </div>
               </div>
+            )}
+
+            {/* Lien site officiel IBI 2026 */}
+            {event.url_site && (
+              <a href={event.url_site} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-3 px-6 py-4 bg-blue-50 border border-blue-200 rounded-2xl hover:bg-blue-100 transition-all font-semibold text-blue-700">
+                <ExternalLink className="w-5 h-5 flex-shrink-0" />
+                {t.eventDetail.officialSite}
+              </a>
             )}
           </div>
 
@@ -153,7 +173,7 @@ export function EvenementDetail() {
               <div className="bg-gradient-to-r from-blue-600 to-cyan-600 h-1" />
               
               <div className="p-8">
-                <h3 className="text-2xl font-bold text-gray-900 mb-8">Détails</h3>
+                <h3 className="text-2xl font-bold text-gray-900 mb-8">{t.eventDetail.details}</h3>
 
                 {/* Date */}
                 <div className="mb-8 pb-8 border-b border-gray-200">
@@ -162,14 +182,11 @@ export function EvenementDetail() {
                       <Calendar className="w-6 h-6 text-blue-600" />
                     </div>
                     <div className="flex-1">
-                      <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Date</p>
+                      <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">{t.eventDetail.date}</p>
                       {event.date_debut && (
                         <p className="text-lg font-bold text-gray-900">
-                          {new Date(event.date_debut).toLocaleDateString('fr-FR', {
-                            weekday: 'short',
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
+                          {new Date(event.date_debut).toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", {
+                            weekday: 'short', year: 'numeric', month: 'long', day: 'numeric',
                           })}
                         </p>
                       )}
@@ -185,12 +202,9 @@ export function EvenementDetail() {
                         <Clock className="w-6 h-6 text-blue-600" />
                       </div>
                       <div className="flex-1">
-                        <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Heure</p>
+                        <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">{t.eventDetail.heure}</p>
                         <p className="text-lg font-bold text-gray-900">
-                          {new Date(event.date_debut).toLocaleTimeString('fr-FR', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                          {new Date(event.date_debut).toLocaleTimeString(lang === "en" ? "en-GB" : "fr-FR", { hour: '2-digit', minute: '2-digit' })}
                         </p>
                       </div>
                     </div>
@@ -198,22 +212,10 @@ export function EvenementDetail() {
                 )}
 
                 {/* Statut */}
-                <div className="mb-8 pb-8 border-b border-gray-200">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
-                    <span className="font-bold text-gray-900">Événement confirmé</span>
-                  </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
+                  <span className="font-bold text-gray-900">{t.eventDetail.confirmed}</span>
                 </div>
-
-                {/* Bouton d'action principal */}
-                <button className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-4 rounded-xl font-bold hover:shadow-xl transition-all duration-300 hover:-translate-y-1 mb-3">
-                  Ajouter au calendrier
-                </button>
-                
-                {/* Bouton secondaire */}
-                <button className="w-full border-2 border-blue-600 text-blue-600 py-3 rounded-xl font-bold hover:bg-blue-50 transition-all duration-300">
-                  Contacter l'organisateur
-                </button>
               </div>
             </div>
           </div>

@@ -5,28 +5,102 @@
 
 const BASE = "http://localhost:3001/api";
 
-function getToken(): string | null {
-  return localStorage.getItem("larodec_token");
+const ACCESS_KEY  = "larodec_token";        // access token (30 min)
+const REFRESH_KEY = "larodec_refresh_token"; // refresh token (7 days)
+
+export function getToken(): string | null {
+  return localStorage.getItem(ACCESS_KEY);
+}
+export function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_KEY);
+}
+export function setTokens(access: string, refresh: string) {
+  localStorage.setItem(ACCESS_KEY, access);
+  localStorage.setItem(REFRESH_KEY, refresh);
+}
+export function clearTokens() {
+  localStorage.removeItem(ACCESS_KEY);
+  localStorage.removeItem(REFRESH_KEY);
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+// ─── Silent refresh with concurrency guard ────────────────────────────────────
+let isRefreshing = false;
+let refreshQueue: Array<(token: string | null) => void> = [];
+
+function onRefreshDone(token: string | null) {
+  refreshQueue.forEach(cb => cb(token));
+  refreshQueue = [];
+}
+
+async function silentRefresh(): Promise<string | null> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+  try {
+    const res = await fetch(`${BASE}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.access_token) return null;
+    setTokens(data.access_token, data.refresh_token ?? refreshToken);
+    return data.access_token;
+  } catch {
+    return null;
+  }
+}
+
+// ─── Core request with auto-retry after refresh ───────────────────────────────
+async function request<T>(path: string, options: RequestInit = {}, _retry = false): Promise<T> {
   const token = getToken();
-  const res = await fetch(`${BASE}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers ?? {}),
+      },
+    });
+  } catch {
+    throw new Error("Impossible de contacter le serveur. Vérifiez que l'API est démarrée.");
+  }
+
+  // ── 401 → try silent refresh once ─────────────────────────────────────────
+  if (res.status === 401 && !_retry) {
+    let newToken: string | null;
+
+    if (isRefreshing) {
+      // Another request is already refreshing — wait in queue
+      newToken = await new Promise<string | null>(resolve => {
+        refreshQueue.push(resolve);
+      });
+    } else {
+      isRefreshing = true;
+      newToken = await silentRefresh();
+      isRefreshing = false;
+      onRefreshDone(newToken);
+    }
+
+    if (newToken) {
+      // Replay original request with new token
+      return request<T>(path, options, true);
+    }
+
+    // Refresh failed → force logout
+    clearTokens();
+    window.dispatchEvent(new Event("larodec_session_expired"));
+    window.location.href = "/login";
+    throw new Error("Session expirée. Veuillez vous reconnecter.");
+  }
+
   const text = await res.text();
   if (!text) throw new Error(`HTTP ${res.status}: empty response`);
   let data: any;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(`Invalid JSON from server: ${text.substring(0, 100)}`);
-  }
+  try { data = JSON.parse(text); }
+  catch { throw new Error(`Invalid JSON from server: ${text.substring(0, 100)}`); }
   if (!res.ok) throw new Error(data.error || data.detail || `HTTP ${res.status}`);
   return data as T;
 }
@@ -35,13 +109,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const authApi = {
   login: (email: string, password: string) =>
-    request<{ token: string; user: any }>("/auth/login", {
+    request<{ token: string; access_token?: string; refresh_token?: string; user: any }>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
 
   register: (data: Record<string, string>) =>
-    request<{ token: string; user: any }>("/auth/register", {
+    request<{ token: string; access_token?: string; refresh_token?: string; user: any }>("/auth/register", {
       method: "POST",
       body: JSON.stringify(data),
     }),

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Search, Trash2, Calendar, MapPin, CheckCircle, Clock, RefreshCw, X, Filter } from "lucide-react";
-import { useLocation } from "react-router";
+import { Plus, Search, Trash2, Calendar, MapPin, CheckCircle, Clock, RefreshCw, X, ExternalLink } from "lucide-react";
+import { useLocation, useNavigate } from "react-router";
 import { evenementsApi } from "../../lib/api";
 
 const TYPE_COLORS: Record<string, string> = {
@@ -28,6 +28,7 @@ function getDaysUntil(d?: string) {
 
 export function GestionEvenements() {
   const location = useLocation();
+  const navigate = useNavigate();
   const isAdmin = location.pathname.startsWith("/admin");
 
   const [evenements, setEvenements] = useState<any[]>([]);
@@ -37,6 +38,7 @@ export function GestionEvenements() {
   const [search, setSearch]         = useState("");
   const [filterStatut, setFilterStatut] = useState<"all" | "valide" | "en_attente">("all");
   const [form, setForm]             = useState(EMPTY_FORM);
+  const [detailEvent, setDetailEvent] = useState<any | null>(null);
 
   const load = async () => {
     setIsLoading(true);
@@ -174,7 +176,7 @@ export function GestionEvenements() {
             <div className="mb-6">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">À venir ({upcoming.length})</p>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {upcoming.map((event, i) => <EventCard key={event.id} event={event} isAdmin={isAdmin} onValidate={handleValidate} onDelete={handleDelete} index={i} />)}
+                {upcoming.map((event, i) => <EventCard key={event.id} event={event} isAdmin={isAdmin} onValidate={handleValidate} onDelete={handleDelete} index={i} onClick={setDetailEvent} />)}
               </div>
             </div>
           )}
@@ -182,7 +184,7 @@ export function GestionEvenements() {
             <div>
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">Passés ({past.length})</p>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {past.map((event, i) => <EventCard key={event.id} event={event} isAdmin={isAdmin} onValidate={handleValidate} onDelete={handleDelete} index={i} />)}
+                {past.map((event, i) => <EventCard key={event.id} event={event} isAdmin={isAdmin} onValidate={handleValidate} onDelete={handleDelete} index={i} onClick={setDetailEvent} />)}
               </div>
             </div>
           )}
@@ -260,13 +262,73 @@ export function GestionEvenements() {
           </div>
         )}
       </AnimatePresence>
+      {/* Event Detail Modal */}
+      <AnimatePresence>
+        {detailEvent && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => setDetailEvent(null)}>
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}>
+              {detailEvent.url_photo && (
+                <div className="h-48 w-full overflow-hidden">
+                  <img src={detailEvent.url_photo} alt={detailEvent.titre} className="w-full h-full object-cover" />
+                </div>
+              )}
+              <div className="p-6">
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <div className="flex gap-2 flex-wrap">
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border flex items-center gap-1 ${detailEvent.statut === "valide" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                      {detailEvent.statut === "valide" ? <CheckCircle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                      {detailEvent.statut === "valide" ? "Validé" : "En attente"}
+                    </span>
+                    {detailEvent.type && <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${TYPE_COLORS[detailEvent.type] || "bg-gray-50 text-gray-600 border-gray-200"}`}>{detailEvent.type}</span>}
+                  </div>
+                  <button onClick={() => setDetailEvent(null)} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0">
+                    <X className="w-4 h-4 text-gray-500" />
+                  </button>
+                </div>
+                <h2 className="text-xl font-bold text-gray-900 mb-3">{detailEvent.titre}</h2>
+                {detailEvent.description && <p className="text-gray-600 text-sm leading-relaxed mb-4">{detailEvent.description}</p>}
+                <div className="space-y-2 mb-4">
+                  {(detailEvent.date_debut || detailEvent.date) && (
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <Calendar className="w-4 h-4 text-purple-500 flex-shrink-0" />
+                      <span>{detailEvent.date_debut ? `Du ${formatDate(detailEvent.date_debut)}${detailEvent.date_fin ? ` au ${formatDate(detailEvent.date_fin)}` : ""}` : formatDate(detailEvent.date)}</span>
+                    </div>
+                  )}
+                  {detailEvent.lieu && (
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <MapPin className="w-4 h-4 text-purple-500 flex-shrink-0" />
+                      <a href={`https://maps.google.com/?q=${encodeURIComponent(detailEvent.lieu)}`} target="_blank" rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline flex items-center gap-1">
+                        {detailEvent.lieu} <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2 pt-4 border-t border-gray-100">
+                  <button onClick={() => { setDetailEvent(null); navigate(`/evenement/${detailEvent.id}`); }}
+                    className="flex-1 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-all">
+                    Voir la page complète
+                  </button>
+                  <button onClick={() => setDetailEvent(null)} className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50 transition-all">
+                    Fermer
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-function EventCard({ event, isAdmin, onValidate, onDelete, index }: {
+function EventCard({ event, isAdmin, onValidate, onDelete, index, onClick }: {
   event: any; isAdmin: boolean;
-  onValidate: (id: number) => void; onDelete: (id: number) => void; index: number;
+  onValidate: (id: number) => void; onDelete: (id: number) => void;
+  index: number; onClick: (event: any) => void;
 }) {
   const days = getDaysUntil(event.date);
   const isUpcoming = days !== null && days >= 0;
@@ -277,7 +339,8 @@ function EventCard({ event, isAdmin, onValidate, onDelete, index }: {
       initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
       whileHover={{ y: -3, boxShadow: "0 12px 32px rgba(0,0,0,0.08)" }}
-      className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      className="bg-white rounded-2xl border border-gray-100 overflow-hidden cursor-pointer"
+      onClick={() => onClick(event)}>
       {event.url_photo && (
         <div className="h-36 w-full overflow-hidden">
           <img src={event.url_photo} alt={event.titre} className="w-full h-full object-cover" />
@@ -320,7 +383,7 @@ function EventCard({ event, isAdmin, onValidate, onDelete, index }: {
           )}
         </div>
         {isAdmin && (
-          <div className="pt-3 border-t border-gray-100 flex justify-end gap-2">
+          <div className="pt-3 border-t border-gray-100 flex justify-end gap-2" onClick={e => e.stopPropagation()}>
             {event.statut === "en_attente" && (
               <button onClick={() => onValidate(event.id)}
                 className="px-3 py-1.5 bg-green-50 text-green-700 hover:bg-green-100 rounded-lg text-xs font-medium transition-all flex items-center gap-1">

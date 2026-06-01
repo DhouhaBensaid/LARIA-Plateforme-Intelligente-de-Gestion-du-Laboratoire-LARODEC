@@ -9,7 +9,7 @@ import {
   Shield, BarChart3, Users, BookOpen, Calendar, Settings,
   TrendingUp, Award, Clock, RefreshCw, ChevronRight,
   GraduationCap, Handshake, FileBarChart, Building2, FileText,
-  Plus, Edit, Trash2, CheckCircle,
+  Plus, Edit, Trash2, CheckCircle, X,
 } from "lucide-react";
 import { useAuth } from "../../lib/auth";
 import { statsApi, articlesApi, researchersApi, evenementsApi, usersApi } from "../../lib/api";
@@ -189,7 +189,7 @@ export function AdminDashboard() {
 
   // Derived
   const chartAnnee = (articleStats.par_annee || []).filter(d => d.annee >= 2018).map(d => ({ annee: String(d.annee), total: Number(d.total) }));
-  const chartSource = (articleStats.par_source || []).slice(0, 6).map(d => ({ name: d.source_scraping || d.source || "Autre", value: Number(d.total) }));
+  const chartSource = (articleStats.par_source || []).slice(0, 6).map(d => ({ name: d.source || "Autre", value: Number(d.total) }));
   const topChercheurs = (articleStats.par_chercheur || []).slice(0, 5);
   const maxPubs = topChercheurs[0]?.total || 1;
   const upcomingEvents = evenements.filter(e => e.date && new Date(e.date) >= new Date()).sort((a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime()).slice(0, 5);
@@ -294,6 +294,34 @@ function SupervisionTab({ stats, auditLog, users, navigate, isLoading }: {
   stats: GlobalStats; auditLog: AuditEntry[]; users: UserEntry[];
   navigate: ReturnType<typeof useNavigate>; isLoading: boolean;
 }) {
+  const [auditDetail, setAuditDetail] = useState<AuditEntry | null>(null);
+  const [roleUser, setRoleUser] = useState<UserEntry | null>(null);
+  const [savingRole, setSavingRole] = useState(false);
+  const [newRole, setNewRole] = useState("");
+
+  const ACTION_LABELS: Record<string, string> = {
+    STATUS_CHANGE: "Changement de statut", SCRAPE_IMPORT: "Import de publications",
+    DELETE_THESIS: "Suppression de thèse", CREATE_THESIS: "Création de thèse",
+    DELETE_PUB: "Suppression de publication", CREATE_PUB: "Création de publication",
+    UPDATE_PUB: "Modification de publication", LOGIN: "Connexion", REGISTER: "Inscription",
+  };
+
+  const handleSaveRole = async () => {
+    if (!roleUser || !newRole) return;
+    setSavingRole(true);
+    try {
+      const token = localStorage.getItem("larodec_token");
+      await fetch(`http://localhost:3001/api/users/${roleUser.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...roleUser, role: newRole }),
+      });
+      setRoleUser(null);
+      navigate(0);
+    } catch { /* ignore */ }
+    finally { setSavingRole(false); }
+  };
+
   const kpiCards = [
     { icon: Users, label: "Chercheurs", value: stats.chercheurs || 0, sub: `${stats.corps_a||0} Corps A · ${stats.corps_b||0} Corps B`, gradient: "from-blue-500 to-blue-600", bg: "bg-blue-50", color: "text-blue-600", onClick: () => navigate("/admin/chercheurs"), badge: 0 },
     { icon: BookOpen, label: "Publications en attente", value: stats.pubsEnAttente || 0, sub: `${stats.publications||0} total indexées`, gradient: "from-amber-500 to-orange-500", bg: "bg-amber-50", color: "text-amber-600", onClick: () => navigate("/admin/publications"), badge: stats.pubsEnAttente || 0 },
@@ -305,9 +333,6 @@ function SupervisionTab({ stats, auditLog, users, navigate, isLoading }: {
     { icon: Users, label: "Gérer comptes", sub: "Ajouter, modifier, supprimer", path: "/admin/chercheurs", iconBg: "bg-blue-50", iconColor: "text-blue-600" },
     { icon: FileText, label: "Valider publications", sub: `${stats.pubsEnAttente||0} en attente`, path: "/admin/publications", iconBg: "bg-amber-50", iconColor: "text-amber-600" },
     { icon: Calendar, label: "Valider événements", sub: `${stats.evEnAttente||0} en attente`, path: "/admin/evenements", iconBg: "bg-emerald-50", iconColor: "text-emerald-600" },
-    { icon: Handshake, label: "Conventions", sub: "Partenariats & accords", path: "/admin/conventions", iconBg: "bg-cyan-50", iconColor: "text-cyan-600" },
-    { icon: FileBarChart, label: "Rapport annuel", sub: "Générer & exporter", path: "/admin/rapport", iconBg: "bg-purple-50", iconColor: "text-purple-600" },
-    { icon: Building2, label: "Info laboratoire", sub: "Modifier les infos LARODEC", path: "/admin/laboratoire", iconBg: "bg-slate-50", iconColor: "text-slate-600" },
   ];
 
   return (
@@ -388,14 +413,14 @@ function SupervisionTab({ stats, auditLog, users, navigate, isLoading }: {
                     initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.06 }}
                     whileHover={{ backgroundColor: "#eff6ff", x: 4, borderRadius: "12px" }}
-                    onClick={() => navigate("/admin/chercheurs")}
+                    onClick={() => setAuditDetail(entry)}
                     className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all group">
                     <motion.div whileHover={{ scale: 1.15, rotate: 5 }}
                       className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${getAuditBg(entry.action)}`}>
                       {getAuditIcon(entry.action)}
                     </motion.div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-slate-700 font-medium truncate">{entry.action}</p>
+                      <p className="text-sm text-slate-700 font-medium truncate">{ACTION_LABELS[entry.action] || entry.action}</p>
                       <p className="text-xs text-slate-400">{entry.utilisateur || ""} · {timeAgo(entry.created_at)}</p>
                     </div>
                     <motion.div initial={{ opacity: 0 }} whileHover={{ opacity: 1, x: 3 }}>
@@ -427,7 +452,8 @@ function SupervisionTab({ stats, auditLog, users, navigate, isLoading }: {
                   {users.slice(0, 6).map((u, i) => (
                     <motion.tr key={u.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
                       whileHover={{ backgroundColor: "#f8fafc" }}
-                      className="cursor-pointer transition-colors" onClick={() => navigate("/admin/chercheurs")}>
+                      className="cursor-pointer transition-colors"
+                      onClick={() => { setRoleUser(u); setNewRole(u.role || "chercheur"); }}>
                       <td className="px-4 py-2.5 font-medium text-slate-800 truncate max-w-[120px]">{u.prenom} {u.nom}</td>
                       <td className="px-4 py-2.5 text-slate-500 truncate max-w-[140px]">{u.email}</td>
                       <td className="px-4 py-2.5">
@@ -443,6 +469,69 @@ function SupervisionTab({ stats, auditLog, users, navigate, isLoading }: {
           )}
         </SectionCard>
       </div>
+
+      {/* Audit detail modal */}
+      <AnimatePresence>
+        {auditDetail && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setAuditDetail(null)}>
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${getAuditBg(auditDetail.action)}`}>{getAuditIcon(auditDetail.action)}</div>
+                <button onClick={() => setAuditDetail(null)} className="p-1.5 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4 text-slate-500" /></button>
+              </div>
+              <h3 className="font-bold text-slate-900 text-lg mb-1">{ACTION_LABELS[auditDetail.action] || auditDetail.action}</h3>
+              <p className="text-xs text-slate-400 mb-4">{auditDetail.created_at ? new Date(auditDetail.created_at).toLocaleString("fr-FR") : "—"}</p>
+              {auditDetail.utilisateur && (
+                <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl mb-3">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                    {auditDetail.utilisateur.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)}
+                  </div>
+                  <div><p className="text-sm font-semibold text-slate-800">{auditDetail.utilisateur}</p><p className="text-xs text-slate-400">Auteur de l'action</p></div>
+                </div>
+              )}
+              {auditDetail.entity && <div className="p-3 bg-slate-50 rounded-xl mb-3"><p className="text-xs text-slate-500 font-medium mb-1">Entité</p><p className="text-sm text-slate-800">{auditDetail.entity}</p></div>}
+              {auditDetail.details && <div className="p-3 bg-slate-50 rounded-xl mb-4"><p className="text-xs text-slate-500 font-medium mb-1">Détails</p><p className="text-sm text-slate-700">{auditDetail.details}</p></div>}
+              <button onClick={() => setAuditDetail(null)} className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-medium transition-all">Fermer</button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Role edit modal */}
+      <AnimatePresence>
+        {roleUser && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setRoleUser(null)}>
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-slate-900">Modifier le rôle</h3>
+                <button onClick={() => setRoleUser(null)} className="p-1.5 hover:bg-slate-100 rounded-lg"><X className="w-4 h-4 text-slate-500" /></button>
+              </div>
+              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl mb-4">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                  {(roleUser.prenom?.[0] || "") + (roleUser.nom?.[0] || "")}
+                </div>
+                <div><p className="font-semibold text-slate-800">{roleUser.prenom} {roleUser.nom}</p><p className="text-xs text-slate-400">{roleUser.email}</p></div>
+              </div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Nouveau rôle</label>
+              <select value={newRole} onChange={e => setNewRole(e.target.value)}
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 mb-4 bg-white">
+                <option value="chercheur">Chercheur</option>
+                <option value="admin">Admin</option>
+                <option value="admin+chercheur">Admin + Chercheur</option>
+              </select>
+              <div className="flex gap-2">
+                <button onClick={() => setRoleUser(null)} className="flex-1 py-2.5 border border-slate-200 text-slate-600 rounded-xl text-sm hover:bg-slate-50 transition-all">Annuler</button>
+                <button onClick={handleSaveRole} disabled={savingRole || newRole === roleUser.role}
+                  className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition-all disabled:opacity-50">
+                  {savingRole ? "Sauvegarde…" : "Confirmer"}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

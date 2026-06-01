@@ -36,6 +36,63 @@ from .scrape_articles import (
 
 load_dotenv()
 
+# --- Sentence-Transformers (optional — graceful fallback if not installed) ----
+import logging as _logging
+import json as _json
+
+try:
+    from sentence_transformers import SentenceTransformer as _SentenceTransformer
+    import numpy as _np
+    _ST_AVAILABLE = True
+except ImportError:
+    _logging.warning("[semantic] sentence-transformers not installed — falling back to TF-IDF search")
+    _ST_AVAILABLE = False
+
+_embedding_model = None
+
+def _get_embedding_model():
+    """Load the model once and cache it."""
+    global _embedding_model
+    if not _ST_AVAILABLE:
+        return None
+    if _embedding_model is None:
+        _embedding_model = _SentenceTransformer("all-MiniLM-L6-v2")
+    return _embedding_model
+
+
+def _cosine_similarity(a, b) -> float:
+    """Cosine similarity between two numpy vectors."""
+    norm_a = _np.linalg.norm(a)
+    norm_b = _np.linalg.norm(b)
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return float(_np.dot(a, b) / (norm_a * norm_b))
+
+
+def _pub_text(row: dict) -> str:
+    """Build the text to embed for a publication row."""
+    parts = [row.get("titre") or "", row.get("auteurs") or ""]
+    return " ".join(p for p in parts if p).strip()
+
+
+def _generate_embedding_for_pub(row: dict):
+    """Generate and persist embedding for a single article row. Returns True on success."""
+    model = _get_embedding_model()
+    if model is None:
+        return False
+    text = _pub_text(row)
+    if not text:
+        return False
+    try:
+        vec = model.encode(text, convert_to_numpy=True)
+        execute("UPDATE articles SET embedding = %s WHERE id = %s",
+                (_json.dumps(vec.tolist()), row["id"]))
+        return True
+    except Exception as e:
+        _logging.warning(f"[semantic] embedding failed for id={row.get('id')}: {e}")
+        return False
+
+
 # --- Config -------------------------------------------------------------------
 
 JWT_SECRET  = os.getenv("JWT_SECRET", "larodec_dev_secret_2025")
@@ -115,11 +172,25 @@ def execute(sql: str, params=()):
 # --- Auth helpers -------------------------------------------------------------
 
 def make_token(user_id: int, email: str, role: str) -> str:
+    """Access token — 30 minutes."""
     payload = {
         "id"   : user_id,
         "email": email,
         "role" : role,
-        "exp"  : datetime.utcnow() + timedelta(days=JWT_EXPIRE),
+        "type" : "access",
+        "exp"  : datetime.utcnow() + timedelta(minutes=30),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+
+def make_refresh_token(user_id: int, email: str, role: str) -> str:
+    """Refresh token — 7 days."""
+    payload = {
+        "id"   : user_id,
+        "email": email,
+        "role" : role,
+        "type" : "refresh",
+        "exp"  : datetime.utcnow() + timedelta(days=7),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
@@ -158,6 +229,9 @@ class RegisterRequest(BaseModel):
     prenom: str = ""
     cin: str = ""
     etablissement: str = ""
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
     universite: str = ""
     grade: str = ""
     telephone: str = ""
@@ -228,8 +302,37 @@ def login(body: LoginRequest):
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
     if not bcrypt.checkpw(body.password.encode(), row["password"].encode()):
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
-    token = make_token(row["id"], row["email"], row["role"])
-    return {"token": token, "user": clean_user_data(row)}
+    access  = make_token(row["id"], row["email"], row["role"])
+    refresh = make_refresh_token(row["id"], row["email"], row["role"])
+    return {
+        "token": access,           # backward compat
+        "access_token": access,
+        "refresh_token": refresh,
+        "user": clean_user_data(row),
+    }
+
+
+@app.post("/api/auth/refresh")
+def refresh_token(body: RefreshRequest):
+    """Exchange a valid refresh_token for a new access_token + refresh_token (rotation)."""
+    try:
+        payload = jwt.decode(body.refresh_token, JWT_SECRET, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Refresh token expiré")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Refresh token invalide")
+
+    if payload.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Token type invalide")
+
+    user_id = payload["id"]
+    row = query("SELECT id, email, role FROM larodec_users WHERE id = %s", (user_id,), one=True)
+    if not row:
+        raise HTTPException(status_code=401, detail="Utilisateur introuvable")
+
+    new_access  = make_token(row["id"], row["email"], row["role"])
+    new_refresh = make_refresh_token(row["id"], row["email"], row["role"])
+    return {"access_token": new_access, "refresh_token": new_refresh}
 
 
 @app.post("/api/auth/register", status_code=201)
@@ -666,7 +769,37 @@ def get_articles_stats(_: dict = Depends(get_current_user)):
     }
 
 
-@app.get("/api/ouvrages")
+class ValidateChercheurRequest(BaseModel):
+    validee_chercheur: Optional[bool] = None
+    rejetee_chercheur: Optional[bool] = None
+
+
+@app.put("/api/articles/{article_id}/validate-chercheur")
+def validate_article_chercheur(
+    article_id: int,
+    body: ValidateChercheurRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Chercheur confirms or rejects an article as belonging to them."""
+    # Verify the article belongs to this user
+    row = query("SELECT id, chercheur_nom FROM articles WHERE id = %s", (article_id,), one=True)
+    if not row:
+        raise HTTPException(status_code=404, detail="Article introuvable")
+
+    if body.validee_chercheur:
+        execute(
+            "UPDATE articles SET validee_chercheur = TRUE, rejetee_chercheur = FALSE WHERE id = %s",
+            (article_id,)
+        )
+    elif body.rejetee_chercheur:
+        execute(
+            "UPDATE articles SET rejetee_chercheur = TRUE, validee_chercheur = FALSE WHERE id = %s",
+            (article_id,)
+        )
+    return {"success": True}
+
+
+
 def get_ouvrages(
     type_filter: str = "book",  # "book" or "chapter"
     search: Optional[str] = None,
@@ -1456,7 +1589,16 @@ def public_articles_chercheurs():
 def public_researchers(categorie: Optional[str] = None):
     """Public list of researchers for the homepage — no auth required."""
     results = []
-    
+
+    # Mapping member_table → categorie
+    TABLE_TO_CAT = {
+        "enseignants_corps_a":        "Corps A",
+        "enseignants_corps_b":        "Corps B",
+        "doctorants":                 "Doctorant",
+        "etudiants_master_recherche": "Master Recherche",
+        "cadres_post_doc":            "Post-Doc",
+    }
+
     # D'abord, récupérer les utilisateurs avec leurs infos ET leur grade depuis les tables de membres
     try:
         user_sql = """
@@ -1469,33 +1611,35 @@ def public_researchers(categorie: Optional[str] = None):
         """
         users = query(user_sql)
         for user in users:
-            # Si l'utilisateur est lié à un membre, récupérer les infos du membre
-            if user.get('member_id') and user.get('member_table'):
-                member_table = user['member_table']
+            member_table = user.get('member_table') or ''
+            user_cat = TABLE_TO_CAT.get(member_table, 'Corps A')
+
+            # Appliquer le filtre categorie aux utilisateurs aussi
+            if categorie and user_cat != categorie:
+                continue
+
+            if user.get('member_id') and member_table:
                 member_id = user['member_id']
-                
-                # Récupérer le grade et la photo depuis la table du membre
                 member_sql = f"""
                     SELECT grade, url_photo 
                     FROM {member_table} 
                     WHERE id = %s
                 """
                 member_info = query(member_sql, (member_id,), one=True)
-                
                 grade = member_info.get('grade', 'Chercheur') if member_info else 'Chercheur'
                 has_photo = member_info and member_info.get('url_photo')
             else:
                 grade = 'Chercheur'
                 member_id = user['id']
                 has_photo = False
-            
+
             results.append({
-                'id': member_id,  # Utiliser member_id pour la photo
+                'id': member_id,
                 'nom_prenom': user['nom_prenom'],
                 'grade': grade,
-                'categorie': 'Utilisateur',
-                'table_source': user.get('member_table', 'larodec_users'),
-                'url_photo': '',  # Pas besoin, PhotoAvatar utilise l'ID
+                'categorie': user_cat,
+                'table_source': member_table or 'larodec_users',
+                'url_photo': '',
                 'email': user.get('email', ''),
                 'telephone': user.get('telephone', '')
             })
@@ -1922,3 +2066,580 @@ def delete_thesis(thesis_id: int, user: dict = Depends(get_current_user)):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ===============================================================================
+# AI — SEMANTIC SEARCH & RECOMMENDATIONS
+# ===============================================================================
+
+import math
+import re as _re
+
+
+def _tokenize(text: str) -> list:
+    """Simple tokenizer: lowercase, remove accents, split on non-alpha."""
+    if not text:
+        return []
+    text = unicodedata.normalize("NFD", text).encode("ascii", "ignore").decode("ascii").lower()
+    return [w for w in _re.split(r"[^a-z0-9]+", text) if len(w) > 2]
+
+
+def _tfidf_score(query_tokens: list, doc_tokens: list, corpus_df: dict, n_docs: int) -> float:
+    """Compute a simple TF-IDF cosine similarity between query and document."""
+    if not query_tokens or not doc_tokens:
+        return 0.0
+    doc_freq: dict = {}
+    for t in doc_tokens:
+        doc_freq[t] = doc_freq.get(t, 0) + 1
+    doc_len = len(doc_tokens)
+    score = 0.0
+    for t in set(query_tokens):
+        tf  = doc_freq.get(t, 0) / doc_len if doc_len else 0
+        df  = corpus_df.get(t, 1)
+        idf = math.log((n_docs + 1) / (df + 1)) + 1
+        score += tf * idf
+    return score
+
+
+# ── Helpers shared by semantic endpoints ──────────────────────────────────────
+
+def _type_sql_condition(type_filter: str | None) -> str:
+    if type_filter == "revue":
+        return " AND LOWER(a.type_publication) IN ('journal articles','article','review','letter')"
+    elif type_filter == "conference":
+        return " AND LOWER(a.type_publication) IN ('conference and workshop papers','conference paper','inproceedings')"
+    elif type_filter == "workshop":
+        return " AND LOWER(a.type_publication) LIKE '%workshop%'"
+    elif type_filter == "ouvrage":
+        return " AND LOWER(a.type_publication) IN ('book-chapter','book chapter','chapter','parts in books or collections','books and theses','book','editorship')"
+    return ""
+
+
+def _ilike_fallback(query_text: str, type_filter, chercheur, page: int, limit: int) -> dict:
+    """Classic ILIKE search used as fallback."""
+    type_conditions = _type_sql_condition(type_filter)
+    sql = f"""
+        SELECT a.id, a.chercheur_nom, a.titre, a.journal_ou_editeur, a.annee,
+               a.auteurs, a.doi, a.url, a.source_scraping, a.indexation,
+               a.type_publication, a.citation_apa
+        FROM articles a
+        WHERE 1=1 {type_conditions}
+    """
+    params: list = []
+    if chercheur:
+        sql += " AND UPPER(TRIM(a.chercheur_nom)) = UPPER(TRIM(%s))"; params.append(chercheur)
+    if query_text:
+        sql += " AND (LOWER(a.titre) LIKE %s OR LOWER(a.auteurs) LIKE %s OR LOWER(a.chercheur_nom) LIKE %s)"
+        kw = f"%{query_text.lower()}%"
+        params += [kw, kw, kw]
+    sql += " ORDER BY a.annee DESC, a.id DESC LIMIT %s OFFSET %s"
+    params += [limit, page * limit]
+    rows = query(sql, params)
+
+    count_sql = f"SELECT COUNT(*) as c FROM articles a WHERE 1=1 {type_conditions}"
+    count_params: list = []
+    if chercheur:
+        count_sql += " AND UPPER(TRIM(a.chercheur_nom)) = UPPER(TRIM(%s))"; count_params.append(chercheur)
+    if query_text:
+        count_sql += " AND (LOWER(a.titre) LIKE %s OR LOWER(a.auteurs) LIKE %s OR LOWER(a.chercheur_nom) LIKE %s)"
+        kw = f"%{query_text.lower()}%"
+        count_params += [kw, kw, kw]
+    total = list(query(count_sql, count_params, one=True).values())[0]
+    return {"total": total, "page": page, "results": [dict(r) for r in (rows or [])], "semantic": False}
+
+
+# ── Public semantic search endpoint (no auth required) ────────────────────────
+
+class PublicSemanticSearchRequest(BaseModel):
+    query: str
+    type: Optional[str] = None
+    chercheur: Optional[str] = None
+    page: int = 0
+    limit: int = 20
+
+
+@app.post("/api/public/publications/search-semantic")
+def public_semantic_search(body: PublicSemanticSearchRequest):
+    """
+    Vector-based semantic search over public articles.
+    Falls back to ILIKE if sentence-transformers unavailable or query < 3 words.
+    """
+    query_text = body.query.strip()
+    words = query_text.split()
+
+    # Short query or model unavailable → ILIKE fallback
+    if len(words) < 3 or not _ST_AVAILABLE:
+        return _ilike_fallback(query_text, body.type, body.chercheur, body.page, body.limit)
+
+    try:
+        model = _get_embedding_model()
+        if model is None:
+            return _ilike_fallback(query_text, body.type, body.chercheur, body.page, body.limit)
+
+        q_vec = model.encode(query_text, convert_to_numpy=True)
+
+        type_conditions = _type_sql_condition(body.type)
+        sql = f"""
+            SELECT a.id, a.chercheur_nom, a.titre, a.journal_ou_editeur, a.annee,
+                   a.auteurs, a.doi, a.url, a.source_scraping, a.indexation,
+                   a.type_publication, a.citation_apa, a.embedding
+            FROM articles a
+            WHERE a.embedding IS NOT NULL {type_conditions}
+        """
+        params: list = []
+        if body.chercheur:
+            sql += " AND UPPER(TRIM(a.chercheur_nom)) = UPPER(TRIM(%s))"
+            params.append(body.chercheur)
+
+        rows = query(sql, params)
+
+        if not rows:
+            return _ilike_fallback(query_text, body.type, body.chercheur, body.page, body.limit)
+
+        THRESHOLD = 0.3
+        scored = []
+        for row in rows:
+            try:
+                p_vec = _np.array(_json.loads(row["embedding"]), dtype=_np.float32)
+                score = _cosine_similarity(q_vec, p_vec)
+                if score >= THRESHOLD:
+                    r = {k: v for k, v in row.items() if k != "embedding"}
+                    r["score"] = round(score, 4)
+                    scored.append(r)
+            except Exception:
+                continue
+
+        if not scored:
+            result = _ilike_fallback(query_text, body.type, body.chercheur, body.page, body.limit)
+            result["fallback_message"] = "Aucun résultat sémantique — affichage des résultats textuels"
+            return result
+
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        total = len(scored)
+        start = body.page * body.limit
+        page_results = scored[start: start + body.limit]
+
+        return {"total": total, "page": body.page, "results": page_results, "semantic": True}
+
+    except Exception as e:
+        _logging.warning(f"[semantic search] error: {e}")
+        return _ilike_fallback(query_text, body.type, body.chercheur, body.page, body.limit)
+
+
+# ── Admin: generate embeddings for all publications ───────────────────────────
+
+@app.post("/api/admin/publications/generate-embeddings")
+def generate_embeddings(_: dict = Depends(require_admin)):
+    """Generate and store embeddings for all articles that don't have one yet."""
+    if not _ST_AVAILABLE:
+        raise HTTPException(status_code=503, detail="sentence-transformers non installé")
+
+    rows = query("""
+        SELECT id, titre, auteurs FROM articles
+        WHERE embedding IS NULL AND titre IS NOT NULL AND titre <> ''
+    """)
+    if not rows:
+        return {"generated": 0, "message": "Tous les embeddings sont déjà générés"}
+
+    model = _get_embedding_model()
+    texts = [_pub_text(dict(r)) for r in rows]
+    ids   = [r["id"] for r in rows]
+
+    try:
+        vecs = model.encode(texts, batch_size=64, show_progress_bar=False, convert_to_numpy=True)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur d'encodage: {e}")
+
+    conn = get_conn()
+    cur  = conn.cursor()
+    count = 0
+    for article_id, vec in zip(ids, vecs):
+        try:
+            cur.execute("UPDATE articles SET embedding = %s WHERE id = %s",
+                        (_json.dumps(vec.tolist()), article_id))
+            count += 1
+        except Exception:
+            pass
+    conn.commit()
+    conn.close()
+
+    return {"generated": count, "message": f"{count} embeddings générés avec succès"}
+
+
+# ── Internal helper: auto-generate embedding after article insert/update ──────
+
+def _auto_embed(article_id: int):
+    """Called after any article create/update to keep embeddings fresh."""
+    if not _ST_AVAILABLE:
+        return
+    try:
+        row = query("SELECT id, titre, auteurs FROM articles WHERE id = %s", (article_id,), one=True)
+        if row:
+            _generate_embedding_for_pub(dict(row))
+    except Exception as e:
+        _logging.warning(f"[auto_embed] id={article_id}: {e}")
+
+
+# ── Legacy authenticated semantic search (kept for backward compat) ───────────
+
+class SemanticSearchRequest(BaseModel):
+    query: str
+    limit: int = 10
+    chercheur: Optional[str] = None
+
+
+class AIRecommendationRequest(BaseModel):
+    chercheur: str
+    publications: List[dict] = []
+
+
+@app.post("/api/ai/semantic-search")
+def semantic_search(body: SemanticSearchRequest, user: dict = Depends(get_current_user)):
+    """
+    Semantic search over the articles table using TF-IDF scoring.
+    Falls back to keyword search if no results above threshold.
+    """
+    query_text = body.query.strip()
+    if not query_text:
+        raise HTTPException(status_code=400, detail="Requête vide")
+
+    query_tokens = _tokenize(query_text)
+
+    sql = """
+        SELECT id, titre, auteurs, journal_ou_editeur, annee, doi, url,
+               source_scraping, indexation, type_publication, chercheur_nom
+        FROM articles
+        WHERE titre IS NOT NULL AND titre <> ''
+        ORDER BY annee DESC
+        LIMIT 2000
+    """
+    params: list = []
+    if body.chercheur:
+        sql = sql.replace("WHERE titre IS NOT NULL AND titre <> ''",
+                          "WHERE titre IS NOT NULL AND titre <> '' AND UPPER(TRIM(chercheur_nom)) = UPPER(TRIM(%s))")
+        params.append(body.chercheur)
+
+    rows = query(sql, params)
+    if not rows:
+        return {"results": [], "total": 0}
+
+    corpus_df: dict = {}
+    docs = []
+    for row in rows:
+        tokens = _tokenize((row.get("titre") or "") + " " + (row.get("auteurs") or "") + " " + (row.get("journal_ou_editeur") or ""))
+        docs.append(tokens)
+        for t in set(tokens):
+            corpus_df[t] = corpus_df.get(t, 0) + 1
+
+    n_docs = len(docs)
+    scored = []
+    for i, (row, doc_tokens) in enumerate(zip(rows, docs)):
+        score = _tfidf_score(query_tokens, doc_tokens, corpus_df, n_docs)
+        if score > 0:
+            scored.append((score, dict(row)))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = scored[:body.limit]
+    max_score = top[0][0] if top else 1.0
+    results = []
+    for score, row in top:
+        row["score"] = round(score / max_score, 3) if max_score > 0 else 0
+        results.append(row)
+
+    if not results:
+        like_sql = """
+            SELECT id, titre, auteurs, journal_ou_editeur, annee, doi, url,
+                   source_scraping, indexation, type_publication, chercheur_nom
+            FROM articles
+            WHERE LOWER(titre) LIKE %s OR LOWER(auteurs) LIKE %s
+            ORDER BY annee DESC
+            LIMIT %s
+        """
+        kw = f"%{query_text.lower()}%"
+        fallback = query(like_sql, (kw, kw, body.limit))
+        results = [dict(r) | {"score": 0.5} for r in (fallback or [])]
+
+    return {"results": results, "total": len(results)}
+
+
+@app.post("/api/ai/recommendations")
+def ai_recommendations(body: AIRecommendationRequest, user: dict = Depends(get_current_user)):
+    """
+    Generate AI-powered publication recommendations based on researcher's profile.
+    Uses TF-IDF keyword extraction + similarity matching against lab publications.
+    """
+    chercheur = body.chercheur.strip()
+    my_pubs   = body.publications  # list of dicts from frontend
+
+    if not my_pubs:
+        # Load from DB if not provided
+        rows = query("""
+            SELECT titre, auteurs, journal_ou_editeur, annee, doi, url
+            FROM articles
+            WHERE UPPER(TRIM(chercheur_nom)) = UPPER(TRIM(%s))
+            ORDER BY annee DESC LIMIT 50
+        """, (chercheur,))
+        my_pubs = [dict(r) for r in (rows or [])]
+
+    if not my_pubs:
+        return {"recommendations": [], "summary": "Aucune publication trouvée pour générer des recommandations."}
+
+    # Build researcher profile tokens
+    profile_text = " ".join(
+        (p.get("titre") or "") + " " + (p.get("journal_ou_editeur") or "")
+        for p in my_pubs
+    )
+    profile_tokens = _tokenize(profile_text)
+
+    # Keyword frequency for profile summary
+    kw_freq: dict = {}
+    stopwords = {"the","of","a","an","and","in","for","on","with","to","is","are",
+                 "based","using","via","approach","method","new","novel","towards",
+                 "de","du","des","le","la","les","un","une","et","en","pour","par"}
+    for t in profile_tokens:
+        if t not in stopwords and len(t) > 3:
+            kw_freq[t] = kw_freq.get(t, 0) + 1
+    top_kws = sorted(kw_freq.items(), key=lambda x: x[1], reverse=True)[:8]
+    summary = (
+        f"Votre profil de recherche couvre principalement : "
+        + ", ".join(kw for kw, _ in top_kws)
+        + f". Basé sur {len(my_pubs)} publications analysées."
+    ) if top_kws else "Profil en cours de construction."
+
+    # Find similar publications from other researchers in the lab
+    other_pubs = query("""
+        SELECT id, titre, auteurs, journal_ou_editeur, annee, doi, url, chercheur_nom
+        FROM articles
+        WHERE UPPER(TRIM(chercheur_nom)) != UPPER(TRIM(%s))
+          AND titre IS NOT NULL AND titre <> ''
+        ORDER BY annee DESC
+        LIMIT 1000
+    """, (chercheur,))
+
+    if not other_pubs:
+        return {"recommendations": [], "summary": summary}
+
+    # Build corpus DF
+    corpus_df: dict = {}
+    docs = []
+    for row in other_pubs:
+        tokens = _tokenize((row.get("titre") or "") + " " + (row.get("journal_ou_editeur") or ""))
+        docs.append(tokens)
+        for t in set(tokens):
+            corpus_df[t] = corpus_df.get(t, 0) + 1
+
+    n_docs = len(docs)
+
+    # Score each candidate against researcher profile
+    scored = []
+    for i, (row, doc_tokens) in enumerate(zip(other_pubs, docs)):
+        score = _tfidf_score(profile_tokens, doc_tokens, corpus_df, n_docs)
+        if score > 0:
+            scored.append((score, dict(row)))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = scored[:10]
+    max_score = top[0][0] if top else 1.0
+
+    recommendations = []
+    for score, row in top:
+        norm_score = round(score / max_score, 3) if max_score > 0 else 0
+        # Generate a reason based on shared keywords
+        doc_tokens = _tokenize((row.get("titre") or "") + " " + (row.get("journal_ou_editeur") or ""))
+        shared = [t for t in set(profile_tokens) & set(doc_tokens) if t not in stopwords and len(t) > 3][:3]
+        raison = (
+            f"Thématique similaire à vos travaux ({', '.join(shared)})" if shared
+            else "Domaine de recherche connexe au vôtre"
+        )
+        recommendations.append({
+            "titre"  : row.get("titre", ""),
+            "auteurs": row.get("auteurs", ""),
+            "annee"  : row.get("annee"),
+            "journal": row.get("journal_ou_editeur", ""),
+            "doi"    : row.get("doi", ""),
+            "url"    : row.get("url", ""),
+            "raison" : raison,
+            "score"  : norm_score,
+        })
+
+    return {"recommendations": recommendations, "summary": summary}
+
+
+@app.get("/api/ai/keywords/{chercheur_nom}")
+def get_researcher_keywords(chercheur_nom: str, _: dict = Depends(get_current_user)):
+    """Extract top keywords from a researcher's publications."""
+    rows = query("""
+        SELECT titre, journal_ou_editeur
+        FROM articles
+        WHERE UPPER(TRIM(chercheur_nom)) = UPPER(TRIM(%s))
+        LIMIT 100
+    """, (chercheur_nom.upper(),))
+
+    if not rows:
+        return {"keywords": []}
+
+    stopwords = {"the","of","a","an","and","in","for","on","with","to","is","are",
+                 "based","using","via","approach","method","new","novel","towards",
+                 "de","du","des","le","la","les","un","une","et","en","pour","par"}
+    freq: dict = {}
+    for row in rows:
+        tokens = _tokenize((row.get("titre") or "") + " " + (row.get("journal_ou_editeur") or ""))
+        for t in tokens:
+            if t not in stopwords and len(t) > 3:
+                freq[t] = freq.get(t, 0) + 1
+
+    top = sorted(freq.items(), key=lambda x: x[1], reverse=True)[:20]
+    return {"keywords": [{"word": w, "count": c} for w, c in top]}
+
+
+# ── AI Suggestions endpoint ────────────────────────────────────────────────────
+
+class AISuggestionsRequest(BaseModel):
+    chercheur: str
+    publications: List[dict] = []
+
+
+@app.post("/api/ai/suggestions")
+def ai_suggestions(body: AISuggestionsRequest, user: dict = Depends(get_current_user)):
+    """
+    Generate personalised suggestions (conferences, journals, collaborators)
+    based on the researcher's publication keywords.
+    Uses local TF-IDF logic — no external AI call required.
+    """
+    chercheur = body.chercheur.strip()
+    my_pubs   = body.publications
+
+    if not my_pubs:
+        rows = query("""
+            SELECT titre, journal_ou_editeur, type_publication
+            FROM articles
+            WHERE UPPER(TRIM(chercheur_nom)) = UPPER(TRIM(%s))
+            ORDER BY annee DESC LIMIT 50
+        """, (chercheur,))
+        my_pubs = [dict(r) for r in (rows or [])]
+
+    if not my_pubs:
+        return {"conferences": [], "journals": [], "collaborators": []}
+
+    # Extract top keywords from researcher's publications
+    stopwords = {"the","of","a","an","and","in","for","on","with","to","is","are",
+                 "based","using","via","approach","method","new","novel","towards",
+                 "de","du","des","le","la","les","un","une","et","en","pour","par","sur"}
+    freq: dict = {}
+    for p in my_pubs:
+        tokens = _tokenize((p.get("titre") or "") + " " + (p.get("journal_ou_editeur") or ""))
+        for t in tokens:
+            if t not in stopwords and len(t) > 3:
+                freq[t] = freq.get(t, 0) + 1
+
+    top_kws = [w for w, _ in sorted(freq.items(), key=lambda x: x[1], reverse=True)[:10]]
+
+    # ── Conferences (static knowledge base keyed by domain keywords) ──────────
+    CONF_DB = [
+        {"name": "ENASE – Evaluation of Novel Approaches to Software Engineering",
+         "url": "https://enase.scitevents.org", "deadline": "Novembre",
+         "keywords": ["software","engineering","quality","metrics","security","ontology"]},
+        {"name": "ICSEA – International Conference on Software Engineering Advances",
+         "url": "https://www.iaria.org/conferences/ICSEA.html", "deadline": "Octobre",
+         "keywords": ["software","engineering","agile","project","management","testing"]},
+        {"name": "IEEE S&P – Symposium on Security and Privacy",
+         "url": "https://www.ieee-security.org/TC/SP2025/", "deadline": "Septembre",
+         "keywords": ["security","privacy","cryptography","risk","vulnerability","cyber"]},
+        {"name": "ICPM – International Conference on Process Mining",
+         "url": "https://icpmconference.org", "deadline": "Juin",
+         "keywords": ["process","mining","workflow","data","analytics","business"]},
+        {"name": "IJCAI – International Joint Conference on AI",
+         "url": "https://www.ijcai.org", "deadline": "Janvier",
+         "keywords": ["intelligence","learning","machine","neural","classification","reasoning"]},
+        {"name": "CAISE – Conference on Advanced Information Systems Engineering",
+         "url": "https://caise.info", "deadline": "Décembre",
+         "keywords": ["information","systems","modeling","requirements","enterprise","data"]},
+        {"name": "RDAAPS – Reconciling Data Analytics, Automation, Privacy and Security",
+         "url": "https://rdaaps.ieee.org", "deadline": "Mars",
+         "keywords": ["data","analytics","privacy","security","automation","cloud"]},
+        {"name": "ICCA – International Computing Conference in Arabic",
+         "url": "https://icca.info", "deadline": "Septembre",
+         "keywords": ["arabic","computing","nlp","language","information","systems"]},
+    ]
+
+    # ── Journals ──────────────────────────────────────────────────────────────
+    JOURNAL_DB = [
+        {"name": "Knowledge and Information Systems", "publisher": "Springer",
+         "url": "https://link.springer.com/journal/10115",
+         "keywords": ["knowledge","information","systems","ontology","mining","data"]},
+        {"name": "International Journal of Information Security", "publisher": "Springer",
+         "url": "https://link.springer.com/journal/10207",
+         "keywords": ["security","privacy","risk","cryptography","vulnerability","cyber"]},
+        {"name": "Journal of Systems and Software", "publisher": "Elsevier",
+         "url": "https://www.sciencedirect.com/journal/journal-of-systems-and-software",
+         "keywords": ["software","systems","engineering","testing","quality","metrics"]},
+        {"name": "Information and Software Technology", "publisher": "Elsevier",
+         "url": "https://www.sciencedirect.com/journal/information-and-software-technology",
+         "keywords": ["software","technology","agile","project","management","process"]},
+        {"name": "IEEE Transactions on Software Engineering", "publisher": "IEEE",
+         "url": "https://ieeexplore.ieee.org/xpl/RecentIssue.jsp?punumber=32",
+         "keywords": ["software","engineering","reliability","testing","formal","verification"]},
+        {"name": "Computers & Security", "publisher": "Elsevier",
+         "url": "https://www.sciencedirect.com/journal/computers-and-security",
+         "keywords": ["security","intrusion","detection","malware","network","cyber"]},
+        {"name": "International Journal of Project Organisation and Management", "publisher": "Inderscience",
+         "url": "https://www.inderscience.com/jhome.php?jcode=ijpom",
+         "keywords": ["project","management","organisation","risk","decision","planning"]},
+        {"name": "Scientific Programming", "publisher": "Hindawi/Wiley",
+         "url": "https://www.hindawi.com/journals/sp/",
+         "keywords": ["programming","software","redundancy","metrics","reliability","defect"]},
+    ]
+
+    def score_item(item_keywords: list) -> float:
+        return sum(1 for kw in top_kws if any(kw in ik for ik in item_keywords))
+
+    # Score and pick top conferences
+    conf_scored = sorted(CONF_DB, key=lambda c: score_item(c["keywords"]), reverse=True)
+    conferences = []
+    for c in conf_scored[:4]:
+        matched = [kw for kw in top_kws if any(kw in ik for ik in c["keywords"])][:3]
+        reason  = f"Parce que vous publiez sur : {', '.join(matched)}" if matched else "Domaine connexe à vos travaux"
+        conferences.append({"name": c["name"], "url": c["url"], "reason": reason, "deadline": c.get("deadline","")})
+
+    # Score and pick top journals
+    jour_scored = sorted(JOURNAL_DB, key=lambda j: score_item(j["keywords"]), reverse=True)
+    journals = []
+    for j in jour_scored[:4]:
+        matched = [kw for kw in top_kws if any(kw in ik for ik in j["keywords"])][:3]
+        reason  = f"Parce que vous publiez sur : {', '.join(matched)}" if matched else "Revue indexée dans votre domaine"
+        journals.append({"name": j["name"], "publisher": j["publisher"], "url": j["url"], "reason": reason})
+
+    # ── Collaborators: other LARODEC researchers with similar keywords ────────
+    other_researchers = query("""
+        SELECT DISTINCT a.chercheur_nom,
+               STRING_AGG(a.titre, ' ') as all_titles
+        FROM articles a
+        WHERE UPPER(TRIM(a.chercheur_nom)) != UPPER(TRIM(%s))
+          AND a.titre IS NOT NULL
+        GROUP BY a.chercheur_nom
+        HAVING COUNT(a.id) >= 2
+        LIMIT 50
+    """, (chercheur,))
+
+    collaborators = []
+    for r in (other_researchers or []):
+        r_tokens = _tokenize(r.get("all_titles") or "")
+        r_freq: dict = {}
+        for t in r_tokens:
+            if t not in stopwords and len(t) > 3:
+                r_freq[t] = r_freq.get(t, 0) + 1
+        r_kws   = {w for w, _ in sorted(r_freq.items(), key=lambda x: x[1], reverse=True)[:15]}
+        common  = [kw for kw in top_kws if kw in r_kws]
+        if len(common) >= 2:
+            collaborators.append({
+                "name": r["chercheur_nom"],
+                "commonThemes": common[:5],
+            })
+
+    collaborators.sort(key=lambda x: len(x["commonThemes"]), reverse=True)
+
+    return {
+        "conferences":   conferences,
+        "journals":      journals,
+        "collaborators": collaborators[:6],
+    }
