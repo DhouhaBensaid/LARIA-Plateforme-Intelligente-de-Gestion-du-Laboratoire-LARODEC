@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router";
 import {
   Search, RefreshCw, CheckCircle2, Hourglass, XCircle,
   Copy, Check, ChevronDown, ChevronUp, ExternalLink,
-  Sparkles, Filter, FileText, Plus, X, AlertCircle,
+  Sparkles, Filter, FileText, Plus, X, AlertCircle, ArchiveX,
 } from "lucide-react";
 import { useAuth } from "../../lib/auth";
 import { articlesApi } from "../../lib/api";
@@ -52,9 +52,12 @@ export function MesContributions() {
   const [importDone,     setImportDone]     = useState(0);
   const [scraperError,   setScraperError]   = useState<string | null>(null);
   const [showScraper,    setShowScraper]    = useState(false);
+  const [showRejected,   setShowRejected]   = useState(false);
 
   const fullName = session?.user.nom && session?.user.prenom
     ? `${session.user.nom} ${session.user.prenom}`.toUpperCase() : "";
+  const displayName = session?.user.prenom && session?.user.nom
+    ? `${session.user.prenom} ${session.user.nom}` : "vous";
 
   useEffect(() => { loadPubs(); }, [session]);
 
@@ -77,30 +80,37 @@ export function MesContributions() {
   const handleConfirm = async (id: number) => {
     setValidating(id);
     try {
-      const res = await fetch(`${API}/api/publications/${id}/validate-by-researcher`, {
-        method: "PATCH",
+      const res = await fetch(`${API}/api/articles/${id}/validate-chercheur`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
         body: JSON.stringify({ validee_chercheur: true }),
       });
-      if (!res.ok) throw new Error();
-      setPubs(prev => prev.map(p => p.id === id ? { ...p, validee_chercheur: true } : p));
-      showToast("Publication confirmée", "success");
-    } catch { showToast("Erreur lors de la confirmation", "error"); }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Erreur ${res.status}`);
+      }
+      setPubs(prev => prev.map(p => p.id === id ? { ...p, validee_chercheur: true, statut: "valide" } : p));
+      showToast("Publication confirmée ✓", "success");
+    } catch (e: any) { showToast(e.message || "Erreur lors de la confirmation", "error"); }
     finally { setValidating(null); }
   };
 
   const handleReject = async (id: number) => {
     setValidating(id);
     try {
-      const res = await fetch(`${API}/api/publications/${id}/validate-by-researcher`, {
-        method: "PATCH",
+      const res = await fetch(`${API}/api/articles/${id}/validate-chercheur`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
         body: JSON.stringify({ rejetee_chercheur: true }),
       });
-      if (!res.ok) throw new Error();
-      setPubs(prev => prev.filter(p => p.id !== id));
-      showToast("Publication rejetée", "success");
-    } catch { showToast("Erreur lors du rejet", "error"); }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Erreur ${res.status}`);
+      }
+      // Keep in list but mark as rejected — allows re-confirmation
+      setPubs(prev => prev.map(p => p.id === id ? { ...p, rejetee_chercheur: true, validee_chercheur: false, statut: "rejete" } : p));
+      showToast("Publication rejetée — vous pouvez la re-confirmer si nécessaire", "success");
+    } catch (e: any) { showToast(e.message || "Erreur lors du rejet", "error"); }
     finally { setValidating(null); }
   };
 
@@ -182,10 +192,12 @@ export function MesContributions() {
   const filtered = typeFiltered.filter(p => {
     const ms = !search || [p.titre, p.auteurs, p.journal_ou_editeur].some((v: any) => v?.toLowerCase().includes(search.toLowerCase()));
     const my = !yearFilter || Number(p.annee) === yearFilter;
-    return ms && my;
+    return ms && my && !p.rejetee_chercheur; // rejected pubs hidden from main list
   });
-  const validated = pubs.filter(p => p.statut === "valide").length;
-  const pending   = pubs.filter(p => p.statut === "en_attente").length;
+  const rejectedPubs = pubs.filter(p => p.rejetee_chercheur);
+  const validated = pubs.filter(p => p.statut === "valide" || p.validee_chercheur).length;
+  const pending   = pubs.filter(p => !p.validee_chercheur && !p.rejetee_chercheur).length;
+  const rejected  = pubs.filter(p => p.rejetee_chercheur).length;
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text); setCopied(id);
@@ -230,14 +242,14 @@ export function MesContributions() {
           <div className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
             <CheckCircle2 className="w-5 h-5 text-emerald-500 flex-shrink-0" />
             <p className="text-sm text-emerald-700 font-medium">
-              {importDone} publication{importDone > 1 ? "s" : ""} soumise{importDone > 1 ? "s" : ""} pour validation. L'administrateur les validera prochainement.
+              {importDone} publication{importDone > 1 ? "s" : ""} soumise{importDone > 1 ? "s" : ""} pour validation. Vous pouvez les confirmer ou rejeter ci-dessous.
             </p>
             <button onClick={() => setImportDone(0)} className="ml-auto text-emerald-400 hover:text-emerald-600"><X className="w-4 h-4" /></button>
           </div>
         )}
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-4 gap-4">
           <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm">
             <p className="text-3xl font-bold text-slate-900">{pubs.length}</p>
             <p className="text-sm text-slate-500 mt-1">Total publications</p>
@@ -247,14 +259,21 @@ export function MesContributions() {
               <CheckCircle2 className="w-4 h-4 text-emerald-500" />
               <p className="text-3xl font-bold text-emerald-600">{validated}</p>
             </div>
-            <p className="text-sm text-slate-500">Validées</p>
+            <p className="text-sm text-slate-500">Confirmées</p>
           </div>
           <div className="bg-white rounded-xl border border-orange-100 p-5 shadow-sm">
             <div className="flex items-center gap-2 mb-1">
               <Hourglass className="w-4 h-4 text-orange-500" />
               <p className="text-3xl font-bold text-orange-500">{pending}</p>
             </div>
-            <p className="text-sm text-slate-500">En attente de validation</p>
+            <p className="text-sm text-slate-500">En attente</p>
+          </div>
+          <div className="bg-white rounded-xl border border-red-100 p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-1">
+              <XCircle className="w-4 h-4 text-red-400" />
+              <p className="text-3xl font-bold text-red-400">{rejected}</p>
+            </div>
+            <p className="text-sm text-slate-500">Rejetées</p>
           </div>
         </div>
 
@@ -263,8 +282,8 @@ export function MesContributions() {
           <div className="flex items-start gap-3 p-4 bg-orange-50 border border-orange-200 rounded-xl">
             <AlertCircle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-semibold text-orange-800">{pending} publication{pending > 1 ? "s" : ""} en attente de validation par l'administrateur</p>
-              <p className="text-xs text-orange-600 mt-0.5">Elles seront publiées sur le site du laboratoire après validation.</p>
+              <p className="text-sm font-semibold text-orange-800">{pending} publication{pending > 1 ? "s" : ""} en attente de votre validation, {displayName}</p>
+              <p className="text-xs text-orange-600 mt-0.5">Confirmez celles qui vous appartiennent ou rejetez les erreurs.</p>
             </div>
           </div>
         )}
@@ -395,7 +414,7 @@ export function MesContributions() {
                         : <Plus className="w-4 h-4" />}
                       Soumettre {selected.size > 0 ? `(${selected.size})` : ""} pour validation
                     </button>
-                    <p className="text-xs text-slate-400">Les publications seront visibles après validation par l'administrateur</p>
+                    <p className="text-xs text-slate-400">Les publications importées seront soumises à votre validation</p>
                   </div>
                 </div>
               )}
@@ -495,35 +514,110 @@ export function MesContributions() {
                           {isCop ? <><Check className="w-3.5 h-3.5" />Copié !</> : <><Copy className="w-3.5 h-3.5" />Copier la référence</>}
                         </button>
                       </div>
-                      {/* Chercheur validation buttons */}
-                      {!pub.validee_chercheur && !pub.rejetee_chercheur && (
-                        <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-3">
-                          <p className="text-xs text-slate-500 flex-1">Cette publication vous appartient-elle ?</p>
+                      {/* Chercheur validation buttons — always visible for re-validation */}
+                      <div className="mt-4 pt-4 border-t border-slate-100">
+                        {!pub.validee_chercheur && !pub.rejetee_chercheur && (
+                          <p className="text-xs text-slate-500 mb-2">Cette publication vous appartient-elle ?</p>
+                        )}
+                        {pub.rejetee_chercheur && (
+                          <p className="text-xs text-amber-600 mb-2 flex items-center gap-1">
+                            <XCircle className="w-3.5 h-3.5" />Rejetée — cliquez Confirmer si c'était une erreur.
+                          </p>
+                        )}
+                        {pub.validee_chercheur && (
+                          <p className="text-xs text-emerald-600 mb-2 flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />Confirmée par vous — cliquez Rejeter si c'était une erreur.
+                          </p>
+                        )}
+                        <div className="flex items-center gap-2">
                           <button
                             onClick={() => handleConfirm(pub.id)}
                             disabled={validating === pub.id}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold transition-all disabled:opacity-50">
-                            {validating === pub.id ? <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                            Confirmer
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-50 ${pub.validee_chercheur ? "bg-emerald-100 text-emerald-700 border border-emerald-300" : "bg-emerald-500 hover:bg-emerald-600 text-white"}`}>
+                            {validating === pub.id ? <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {pub.validee_chercheur ? "✓ Confirmée" : "Confirmer"}
                           </button>
                           <button
                             onClick={() => handleReject(pub.id)}
                             disabled={validating === pub.id}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs font-semibold transition-all disabled:opacity-50">
-                            <XCircle className="w-3.5 h-3.5" />Rejeter
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-50 ${pub.rejetee_chercheur ? "bg-red-100 text-red-700 border border-red-300" : "bg-red-500 hover:bg-red-600 text-white"}`}>
+                            <XCircle className="w-3.5 h-3.5" />
+                            {pub.rejetee_chercheur ? "✗ Rejetée" : "Rejeter"}
                           </button>
                         </div>
-                      )}
-                      {pub.validee_chercheur && (
-                        <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-2 text-xs text-emerald-600 font-medium">
-                          <CheckCircle2 className="w-4 h-4" />Confirmée par vous
-                        </div>
-                      )}
+                      </div>
                     </div>
                   )}
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* ── Rejected pubs archive (collapsed by default) ── */}
+        {rejectedPubs.length > 0 && (
+          <div className="rounded-2xl border border-red-200 overflow-hidden">
+            <button
+              onClick={() => setShowRejected(r => !r)}
+              className="w-full flex items-center gap-3 px-5 py-3.5 bg-red-50 hover:bg-red-100 transition-colors text-left"
+            >
+              <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center flex-shrink-0">
+                <ArchiveX className="w-4 h-4 text-red-500" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-red-700">
+                  Archives — {rejectedPubs.length} publication{rejectedPubs.length > 1 ? "s" : ""} rejetée{rejectedPubs.length > 1 ? "s" : ""}
+                </p>
+                <p className="text-xs text-red-400">Cliquez pour afficher · vous pouvez re-confirmer si nécessaire</p>
+              </div>
+              {showRejected
+                ? <ChevronUp className="w-4 h-4 text-red-400 flex-shrink-0" />
+                : <ChevronDown className="w-4 h-4 text-red-400 flex-shrink-0" />}
+            </button>
+
+            {showRejected && (
+              <div className="divide-y divide-red-50 bg-white">
+                {rejectedPubs.map((pub, idx) => {
+                  const pid  = `rej-${idx}`;
+                  const isExp = expanded === pid;
+                  return (
+                    <div key={pid} className="opacity-70 hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => setExpanded(isExp ? null : pid)}
+                        className="w-full text-left px-6 py-3 flex items-start gap-3 hover:bg-red-50/40 transition-colors group"
+                      >
+                        <XCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-1" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-600 truncate line-through decoration-red-300 group-hover:no-underline">
+                            {pub.titre}
+                          </p>
+                          <div className="flex gap-2 mt-0.5">
+                            {pub.annee && <span className="text-xs text-slate-400">{pub.annee}</span>}
+                            {pub.journal_ou_editeur && <span className="text-xs text-slate-400 italic truncate max-w-xs">{pub.journal_ou_editeur}</span>}
+                          </div>
+                        </div>
+                        {isExp ? <ChevronUp className="w-4 h-4 text-slate-400 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />}
+                      </button>
+                      {isExp && (
+                        <div className="px-6 pb-4 bg-red-50/20 border-t border-red-100">
+                          <p className="text-xs text-slate-500 mt-3 mb-2">{pub.auteurs || ""}</p>
+                          <button
+                            onClick={() => handleConfirm(pub.id)}
+                            disabled={validating === pub.id}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold transition-all disabled:opacity-50"
+                          >
+                            {validating === pub.id
+                              ? <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
+                              : <CheckCircle2 className="w-3.5 h-3.5" />}
+                            Annuler le rejet — c'est ma publication
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

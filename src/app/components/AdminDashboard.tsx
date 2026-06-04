@@ -197,7 +197,12 @@ export function AdminDashboard() {
   return (
     <div className="min-h-screen bg-slate-50 p-6">
 
-      {/* ── Hero Banner ── */}
+      {/* Watermark logo */}
+      <div className="pointer-events-none select-none fixed inset-0 flex items-center justify-center z-0" aria-hidden="true">
+        <img src={logoLarodec} alt="" className="w-[460px] h-[460px] object-contain opacity-[0.04] grayscale" />
+      </div>
+
+      <div className="relative z-10">
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
         className="relative overflow-hidden rounded-3xl mb-6 bg-gradient-to-br from-blue-700 via-blue-600 to-cyan-600 p-8">
         {/* Floating blobs */}
@@ -285,6 +290,7 @@ export function AdminDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 }

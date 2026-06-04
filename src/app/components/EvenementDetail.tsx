@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router";
-import { ArrowLeft, Calendar, MapPin, Clock, Share2, Heart, ExternalLink } from "lucide-react";
+import { ArrowLeft, Calendar, MapPin, ExternalLink } from "lucide-react";
 import { useLang } from "../../lib/useLang";
+import { BackgroundLogo } from "./BackgroundLogo";
 
 export function EvenementDetail() {
   const { id } = useParams();
@@ -9,7 +10,6 @@ export function EvenementDetail() {
   const { lang, t } = useLang();
   const [event, setEvent] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [liked, setLiked] = useState(false);
 
   useEffect(() => {
     const loadEvent = async () => {
@@ -54,109 +54,88 @@ export function EvenementDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-cyan-50">
-      {/* Header avec image de fond */}
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-cyan-50" style={{ position:"relative", overflow:"hidden" }}>
+      <BackgroundLogo size={320} opacity={0.10} rotate={-8} top={40} right={-50} />
+      {/* ── Header banner ── */}
       <div className="relative h-96 overflow-hidden bg-gray-900">
         {event.url_photo ? (
-          <img 
+          <img
             src={event.url_photo}
             alt={event.titre}
             className="w-full h-full object-cover"
-            style={{
-              filter: 'brightness(1.1) contrast(1.15) saturate(1.1) blur(0px)',
-              WebkitFontSmoothing: 'antialiased',
-              backfaceVisibility: 'hidden',
-            }}
             loading="eager"
             decoding="async"
           />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-blue-600 to-cyan-600" />
         )}
-        
-        {/* Overlay sombre */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
-        
-        {/* Contenu du header */}
+
+        {/* Improved gradient overlay */}
+        <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, rgba(10,20,50,0.30) 0%, rgba(10,20,50,0.75) 100%)" }} />
+
+        {/* Header content */}
         <div className="absolute inset-0 flex flex-col justify-between p-6">
-          <button 
-            onClick={() => navigate("/")} 
-            className="flex items-center gap-2 w-fit hover:bg-white/20 px-4 py-2 rounded-lg transition-all backdrop-blur-sm"
+          {/* Back button — pill style */}
+          <button
+            onClick={() => navigate("/")}
+            className="flex items-center gap-2 w-fit px-4 py-2 rounded-full transition-all backdrop-blur-sm border border-white/30 text-white font-semibold text-sm hover:bg-white/20"
+            style={{ background: "rgba(255,255,255,0.15)" }}
           >
-            <ArrowLeft className="w-5 h-5 text-white" />
-            <span className="text-white font-semibold">{t.eventDetail.back}</span>
+            <ArrowLeft className="w-4 h-4" />
+            <span>{t.eventDetail.back}</span>
           </button>
-          
+
           <div>
-            <div className="inline-block px-4 py-2 bg-white/20 backdrop-blur-md rounded-full mb-4">
-              <span className="text-white text-sm font-bold">Événement LARODEC</span>
+            {/* Glassmorphism badge */}
+            <div className="inline-block px-4 py-2 mb-4 rounded-full border border-white/30 backdrop-blur-[8px] font-bold text-white text-sm"
+              style={{ background: "rgba(255,255,255,0.15)" }}>
+              Événement LARODEC
             </div>
-            <h1 className="text-5xl md:text-6xl font-bold text-white mb-3 drop-shadow-lg">{event.titre}</h1>
-            <p className="text-white/90 text-lg font-medium drop-shadow-md">Événement du laboratoire LARODEC</p>
+            <h1 className="text-5xl md:text-6xl font-extrabold text-white mb-3 drop-shadow-lg leading-tight">{event.titre}</h1>
+            <p className="text-white/85 text-lg font-medium drop-shadow-md">Événement du laboratoire LARODEC</p>
           </div>
         </div>
       </div>
 
-      {/* Contenu principal */}
+      {/* ── Body ── */}
       <div className="max-w-6xl mx-auto px-6 py-12">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Colonne principale */}
-          <div className="lg:col-span-2 space-y-8">
-            {/* Actions rapides */}
-            <div className="flex gap-3">
-              <button 
-                onClick={() => setLiked(!liked)}
-                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all ${
-                  liked 
-                    ? 'bg-red-100 text-red-600 hover:bg-red-200' 
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                <Heart className={`w-5 h-5 ${liked ? 'fill-current' : ''}`} />
-                <span>{liked ? t.eventDetail.liked : t.eventDetail.like}</span>
-              </button>
-              <button className="flex items-center gap-2 px-6 py-3 bg-gray-100 text-gray-600 rounded-xl font-semibold hover:bg-gray-200 transition-all">
-                <Share2 className="w-5 h-5" />
-                <span>{t.eventDetail.share}</span>
-              </button>
-            </div>
 
+          {/* Main column */}
+          <div className="lg:col-span-2 space-y-8">
             {/* Description */}
             <div className="bg-white rounded-2xl shadow-md p-8 border border-gray-100">
-              <h2 className="text-3xl font-bold text-gray-900 mb-6">{t.eventDetail.about}</h2>
-              <p className="text-gray-700 text-lg leading-relaxed whitespace-pre-wrap font-medium">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6" style={{ color: "#374151" }}>{t.eventDetail.about}</h2>
+              <p className="text-gray-700 leading-[1.7] whitespace-pre-wrap" style={{ fontSize: 16, color: "#374151" }}>
                 {event.description}
               </p>
             </div>
 
-            {/* Informations pratiques */}
+            {/* Lieu */}
             {event.lieu && (
               <div className="bg-white rounded-2xl shadow-md p-8 border border-gray-100">
-                <h3 className="text-2xl font-bold text-gray-900 mb-6">{t.eventDetail.practical}</h3>
-                <div className="space-y-6">
-                  <div className="flex items-start gap-4">
-                    <div className="w-14 h-14 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                      <MapPin className="w-7 h-7 text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-500 mb-1">{t.eventDetail.lieu}</p>
-                      {/* Lieu cliquable → Google Maps */}
-                      <a
-                        href={`https://maps.google.com/?q=${encodeURIComponent(event.lieu)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-700 font-bold text-lg hover:underline flex items-center gap-1.5"
-                      >
-                        {event.lieu}
-                        <ExternalLink className="w-4 h-4 flex-shrink-0" />
-                      </a>
-                    </div>
+                <h3 className="text-xl font-bold text-gray-900 mb-6">{t.eventDetail.practical}</h3>
+                <div className="flex items-start gap-4">
+                  <div className="w-14 h-14 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <MapPin className="w-7 h-7 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-500 mb-1">{t.eventDetail.lieu}</p>
+                    <a
+                      href={`https://maps.google.com/?q=${encodeURIComponent(event.lieu)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-700 font-bold text-lg hover:underline flex items-center gap-1.5"
+                    >
+                      {event.lieu}
+                      <ExternalLink className="w-4 h-4 flex-shrink-0" />
+                    </a>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Lien site officiel IBI 2026 */}
+            {/* Official site */}
             {event.url_site && (
               <a href={event.url_site} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-3 px-6 py-4 bg-blue-50 border border-blue-200 rounded-2xl hover:bg-blue-100 transition-all font-semibold text-blue-700">
@@ -166,27 +145,28 @@ export function EvenementDetail() {
             )}
           </div>
 
-          {/* Sidebar - Détails */}
+          {/* Sidebar — Details (no heure) */}
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100 sticky top-6">
-              {/* Header coloré */}
+            <div
+              className="rounded-2xl overflow-hidden sticky top-6 shadow-md"
+              style={{ background: "#F8FAFF", border: "1px solid #e2e8f0" }}
+            >
               <div className="bg-gradient-to-r from-blue-600 to-cyan-600 h-1" />
-              
               <div className="p-8">
-                <h3 className="text-2xl font-bold text-gray-900 mb-8">{t.eventDetail.details}</h3>
+                <h3 className="text-xl font-bold text-gray-900 mb-8">{t.eventDetail.details}</h3>
 
-                {/* Date */}
-                <div className="mb-8 pb-8 border-b border-gray-200">
+                {/* Date only — no heure */}
+                <div className="mb-6 pb-6 border-b border-gray-200">
                   <div className="flex items-start gap-4">
                     <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                      <Calendar className="w-6 h-6 text-blue-600" />
+                      <Calendar className="w-6 h-6" style={{ color: "#00D4FF" }} />
                     </div>
-                    <div className="flex-1">
+                    <div>
                       <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">{t.eventDetail.date}</p>
                       {event.date_debut && (
-                        <p className="text-lg font-bold text-gray-900">
+                        <p className="text-base font-bold text-gray-900">
                           {new Date(event.date_debut).toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", {
-                            weekday: 'short', year: 'numeric', month: 'long', day: 'numeric',
+                            weekday: "short", year: "numeric", month: "long", day: "numeric",
                           })}
                         </p>
                       )}
@@ -194,24 +174,15 @@ export function EvenementDetail() {
                   </div>
                 </div>
 
-                {/* Heure */}
-                {event.date_debut && (
-                  <div className="mb-8 pb-8 border-b border-gray-200">
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <Clock className="w-6 h-6 text-blue-600" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">{t.eventDetail.heure}</p>
-                        <p className="text-lg font-bold text-gray-900">
-                          {new Date(event.date_debut).toLocaleTimeString(lang === "en" ? "en-GB" : "fr-FR", { hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                      </div>
-                    </div>
+                {/* Type */}
+                {event.type && (
+                  <div className="mb-6 pb-6 border-b border-gray-200">
+                    <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">Type</p>
+                    <span className="inline-block px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-semibold">{event.type}</span>
                   </div>
                 )}
 
-                {/* Statut */}
+                {/* Status */}
                 <div className="flex items-center gap-3">
                   <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
                   <span className="font-bold text-gray-900">{t.eventDetail.confirmed}</span>

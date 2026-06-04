@@ -6,8 +6,8 @@ import {
   Upload, Link as LinkIcon, Eye, EyeOff, BookOpen,
   Users, Award, Globe, ChevronRight, Phone, CreditCard, X,
 } from "lucide-react";
-import logoLarodec from "../../imports/image-1.png";
 import { useAuth } from "../../lib/auth";
+import { BackgroundLogo } from "./BackgroundLogo";
 
 // ── Stats shown on the left panel ──────────────────────────────────────────
 const STATS = [
@@ -108,48 +108,57 @@ export function LoginPage() {
     <div className="min-h-screen flex">
 
       {/* ── LEFT PANEL — branding ── */}
-      <div className="hidden lg:flex lg:w-5/12 xl:w-1/2 relative overflow-hidden flex-col">
-        {/* Animated gradient background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-700 via-blue-600 to-cyan-500" />
-        <div className="absolute inset-0 opacity-20">
-          <div className="absolute top-0 left-0 w-96 h-96 bg-white rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
-          <div className="absolute bottom-0 right-0 w-80 h-80 bg-cyan-300 rounded-full blur-3xl translate-x-1/3 translate-y-1/3" />
-          <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-blue-300 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
-        </div>
-        {/* Grid pattern overlay */}
-        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)", backgroundSize: "32px 32px" }} />
+      <div className="hidden lg:flex lg:w-5/12 xl:w-1/2 relative overflow-hidden flex-col"
+        style={{ background: "linear-gradient(135deg, #1A1A4E 0%, #1A73E8 100%)" }}>
+
+        {/* SVG watermark — BackgroundLogo composant réutilisable */}
+        <BackgroundLogo dark size={420} opacity={0.07} rotate={-8} top={-40} right={-80} />
 
         <div className="relative flex flex-col h-full px-12 py-12">
           {/* Back button */}
-          <button onClick={() => navigate("/")} className="flex items-center gap-2 text-white/70 hover:text-white transition-colors text-sm font-medium w-fit">
+          <button onClick={() => navigate("/")}
+            className="flex items-center gap-2 text-white/70 hover:text-white transition-colors text-sm font-medium w-fit">
             <ArrowLeft className="w-4 h-4" />Retour à l'accueil
           </button>
 
-          {/* Logo + title */}
+          {/* Logo SVG inline + title */}
           <div className="flex-1 flex flex-col justify-center">
-            <div className="w-24 h-24 bg-white/15 backdrop-blur-sm rounded-3xl flex items-center justify-center mb-8 shadow-xl border border-white/30 p-2">
-              <img src={logoLarodec} alt="LARODEC" className="w-full h-full object-contain drop-shadow-lg" />
+            {/* Radar icon alone — no text mixed into SVG to avoid truncation */}
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 24 }}>
+              <svg viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg"
+                style={{ width: 44, height: 44, flexShrink: 0 }}>
+                <circle cx="22" cy="22" r="16" stroke="white" strokeWidth="2.5"/>
+                <circle cx="22" cy="22" r="9"  stroke="white" strokeWidth="2"/>
+                <circle cx="22" cy="22" r="3"  fill="white"/>
+                <line x1="25.5" y1="22" x2="38" y2="22" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+                <line x1="33"   y1="17" x2="38" y2="22" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+                <line x1="33"   y1="27" x2="38" y2="22" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+              </svg>
+              <span style={{ fontFamily: "'Inter','Segoe UI',Arial,sans-serif", fontWeight: 900, fontSize: 38, color: "white", letterSpacing: "0.05em", lineHeight: 1 }}>
+                LARODEC
+              </span>
             </div>
-            <h1 className="text-5xl font-black text-white mb-3 leading-tight">LARODEC</h1>
-            <p className="text-white/80 text-lg font-medium mb-2 leading-snug">
+
+            <p className="text-white/80 text-base font-medium mb-1 leading-snug">
               Laboratoire de Recherche Opérationnelle,<br />de Décision et de Contrôle de Processus
             </p>
-            <p className="text-white/60 text-sm mb-12">ISG · Université de Tunis</p>
+            <p className="text-white/60 text-sm mb-10">ISG · Université de Tunis</p>
 
-            {/* Stats grid */}
+            {/* Stats grid — all cards identical bg */}
             <div className="grid grid-cols-2 gap-4">
               {STATS.map(({ label, value, icon: Icon }) => (
-                <div key={label} className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-5 hover:bg-white/15 transition-all">
-                  <Icon className="w-5 h-5 text-white/70 mb-3" />
+                <div key={label}
+                  className="border border-white/20 rounded-xl p-5 transition-all hover:border-white/40"
+                  style={{ background: "rgba(255,255,255,0.12)" }}>
+                  <Icon className="w-5 h-5 mb-3" style={{ color: "rgba(255,255,255,0.7)" }} />
                   <p className="text-3xl font-black text-white">{value}</p>
-                  <p className="text-white/60 text-xs font-medium mt-1">{label}</p>
+                  <p className="text-xs font-medium mt-1" style={{ color: "rgba(255,255,255,0.6)" }}>{label}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Footer */}
-          <p className="text-white/40 text-xs">© 2026 LARODEC · ISG Tunis</p>
+          <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>© 2026 LARODEC · ISG Tunis</p>
         </div>
       </div>
 
@@ -167,11 +176,18 @@ export function LoginPage() {
 
             {/* Mobile logo */}
             <div className="lg:hidden text-center mb-8">
-              <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg p-1.5 border border-slate-200">
-                <img src={logoLarodec} alt="LARODEC" className="w-full h-full object-contain" />
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: 36, height: 36 }}>
+                  <circle cx="20" cy="20" r="14" stroke="#1A73E8" strokeWidth="2.5"/>
+                  <circle cx="20" cy="20" r="8"  stroke="#1A73E8" strokeWidth="2"/>
+                  <circle cx="20" cy="20" r="3"  fill="#1A73E8"/>
+                  <line x1="24" y1="20" x2="34" y2="20" stroke="#1A73E8" strokeWidth="2.5" strokeLinecap="round"/>
+                  <line x1="30" y1="16" x2="34" y2="20" stroke="#1A73E8" strokeWidth="2.5" strokeLinecap="round"/>
+                  <line x1="30" y1="24" x2="34" y2="20" stroke="#1A73E8" strokeWidth="2.5" strokeLinecap="round"/>
+                </svg>
+                <h1 className="text-2xl font-black" style={{ color: "#1A1A4E" }}>LARODEC</h1>
               </div>
-              <h1 className="text-2xl font-black text-slate-900">LARODEC</h1>
-              <p className="text-slate-500 text-sm mt-1">ISG · Université de Tunis</p>
+              <p className="text-slate-500 text-sm">ISG · Université de Tunis</p>
             </div>
 
             {/* Tab switcher */}
@@ -203,7 +219,7 @@ export function LoginPage() {
             {tab === "login" && (
               <div>
                 <div className="mb-6">
-                  <h2 className="text-2xl font-black text-slate-900">Bon retour 👋</h2>
+                  <h2 className="text-2xl font-black text-slate-900">Bon retour</h2>
                   <p className="text-slate-500 text-sm mt-1">Connectez-vous à votre espace LARODEC</p>
                 </div>
 
@@ -212,21 +228,26 @@ export function LoginPage() {
                   <div>
                     <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Email</label>
                     <div className="relative">
-                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: "#1A73E8" }} />
                       <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
                         placeholder="votre.email@exemple.com"
-                        className="w-full pl-11 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all shadow-sm" />
+                        className="w-full pl-11 pr-4 py-3.5 rounded-xl text-sm outline-none transition-all" style={{ background: "#F0F7FF", border: "1px solid #d1dff8" }} />
                     </div>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Mot de passe</label>
                     <div className="relative">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: "#1A73E8" }} />
                       <input type={showPwd ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} required
                         placeholder="••••••••"
-                        className="w-full pl-11 pr-12 py-3.5 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all shadow-sm" />
+                        className="w-full pl-11 pr-12 py-3.5 rounded-xl text-sm outline-none transition-all" style={{ background: "#F0F7FF", border: "1px solid #d1dff8" }} />
                       <button type="button" onClick={() => setShowPwd(!showPwd)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
                         {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <div className="flex justify-end mt-1">
+                      <button type="button" className="text-xs font-medium hover:underline" style={{ color: "#1A73E8" }}>
+                        Mot de passe oublié ?
                       </button>
                     </div>
                   </div>

@@ -143,3 +143,14 @@ SELECT 'cadres'     AS categorie, COUNT(*) AS effectif FROM cadres_post_doc;
 -- Run once if upgrading from a version without semantic search
 -- =============================================================
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS embedding TEXT;
+
+-- =============================================================
+-- MIGRATION: add chercheur validation columns (2026-06-02)
+-- =============================================================
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS validee_chercheur BOOLEAN DEFAULT FALSE;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS rejetee_chercheur BOOLEAN DEFAULT FALSE;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS statut VARCHAR(20) DEFAULT 'en_attente';
+
+CREATE INDEX IF NOT EXISTS idx_articles_validee ON articles(validee_chercheur);
+CREATE INDEX IF NOT EXISTS idx_articles_rejetee ON articles(rejetee_chercheur);
+CREATE INDEX IF NOT EXISTS idx_articles_statut  ON articles(statut);

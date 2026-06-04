@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   FileText, BookOpen, Calendar, TrendingUp, Copy, Check,
   ChevronDown, ChevronUp, RefreshCw, ExternalLink,

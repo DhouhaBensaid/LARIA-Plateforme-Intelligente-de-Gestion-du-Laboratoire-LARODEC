@@ -30,6 +30,7 @@ from .scrape_articles import (
     scrape_dblp,
     scrape_openalex,
     scrape_scopus,
+    scrape_scholar_url,
     deduplicate,
     format_apa,
 )
@@ -1767,14 +1768,16 @@ def public_researcher_publications(nom_prenom: str):
     
     try:
         # 1. Chercher dans la table articles (publications scrapées)
+        # Recherche par chercheur_nom OU dans le champ auteurs
         rows = query("""
             SELECT titre, auteurs, journal_ou_editeur as journal, annee, doi, url,
                    source_scraping as source, citation_apa, type_publication as type_publication,
                    indexation, NULL as impact_factor
             FROM articles
             WHERE UPPER(TRIM(chercheur_nom)) = %s
+               OR LOWER(auteurs) LIKE LOWER(%s)
             ORDER BY annee DESC
-        """, (nom_upper,))
+        """, (nom_upper, f"%{nom_prenom}%"))
         results.extend(rows or [])
     except Exception as e:
         print(f"[public_researcher_publications] articles: {e}")
@@ -2115,7 +2118,7 @@ def _type_sql_condition(type_filter: str | None) -> str:
     return ""
 
 
-def _ilike_fallback(query_text: str, type_filter, chercheur, page: int, limit: int) -> dict:
+def _ilike_fallback(query_text: str, type_filter, chercheur, page: int, limit: int, year_from=None, year_to=None) -> dict:
     """Classic ILIKE search used as fallback."""
     type_conditions = _type_sql_condition(type_filter)
     sql = f"""
@@ -2132,6 +2135,10 @@ def _ilike_fallback(query_text: str, type_filter, chercheur, page: int, limit: i
         sql += " AND (LOWER(a.titre) LIKE %s OR LOWER(a.auteurs) LIKE %s OR LOWER(a.chercheur_nom) LIKE %s)"
         kw = f"%{query_text.lower()}%"
         params += [kw, kw, kw]
+    if year_from:
+        sql += " AND a.annee >= %s"; params.append(year_from)
+    if year_to:
+        sql += " AND a.annee <= %s"; params.append(year_to)
     sql += " ORDER BY a.annee DESC, a.id DESC LIMIT %s OFFSET %s"
     params += [limit, page * limit]
     rows = query(sql, params)
@@ -2144,6 +2151,10 @@ def _ilike_fallback(query_text: str, type_filter, chercheur, page: int, limit: i
         count_sql += " AND (LOWER(a.titre) LIKE %s OR LOWER(a.auteurs) LIKE %s OR LOWER(a.chercheur_nom) LIKE %s)"
         kw = f"%{query_text.lower()}%"
         count_params += [kw, kw, kw]
+    if year_from:
+        count_sql += " AND a.annee >= %s"; count_params.append(year_from)
+    if year_to:
+        count_sql += " AND a.annee <= %s"; count_params.append(year_to)
     total = list(query(count_sql, count_params, one=True).values())[0]
     return {"total": total, "page": page, "results": [dict(r) for r in (rows or [])], "semantic": False}
 
@@ -2154,6 +2165,8 @@ class PublicSemanticSearchRequest(BaseModel):
     query: str
     type: Optional[str] = None
     chercheur: Optional[str] = None
+    year_from: Optional[int] = None
+    year_to: Optional[int] = None
     page: int = 0
     limit: int = 20
 
@@ -2169,12 +2182,13 @@ def public_semantic_search(body: PublicSemanticSearchRequest):
 
     # Short query or model unavailable → ILIKE fallback
     if len(words) < 3 or not _ST_AVAILABLE:
-        return _ilike_fallback(query_text, body.type, body.chercheur, body.page, body.limit)
+        return _ilike_fallback(query_text, body.type, body.chercheur, body.page, body.limit,
+                               body.year_from, body.year_to)
 
     try:
         model = _get_embedding_model()
         if model is None:
-            return _ilike_fallback(query_text, body.type, body.chercheur, body.page, body.limit)
+            return _ilike_fallback(query_text, body.type, body.chercheur, body.page, body.limit, body.year_from, body.year_to)
 
         q_vec = model.encode(query_text, convert_to_numpy=True)
 
@@ -2190,11 +2204,17 @@ def public_semantic_search(body: PublicSemanticSearchRequest):
         if body.chercheur:
             sql += " AND UPPER(TRIM(a.chercheur_nom)) = UPPER(TRIM(%s))"
             params.append(body.chercheur)
+        if body.year_from:
+            sql += " AND a.annee >= %s"
+            params.append(body.year_from)
+        if body.year_to:
+            sql += " AND a.annee <= %s"
+            params.append(body.year_to)
 
         rows = query(sql, params)
 
         if not rows:
-            return _ilike_fallback(query_text, body.type, body.chercheur, body.page, body.limit)
+            return _ilike_fallback(query_text, body.type, body.chercheur, body.page, body.limit, body.year_from, body.year_to)
 
         THRESHOLD = 0.3
         scored = []
@@ -2210,7 +2230,7 @@ def public_semantic_search(body: PublicSemanticSearchRequest):
                 continue
 
         if not scored:
-            result = _ilike_fallback(query_text, body.type, body.chercheur, body.page, body.limit)
+            result = _ilike_fallback(query_text, body.type, body.chercheur, body.page, body.limit, body.year_from, body.year_to)
             result["fallback_message"] = "Aucun résultat sémantique — affichage des résultats textuels"
             return result
 
@@ -2223,7 +2243,7 @@ def public_semantic_search(body: PublicSemanticSearchRequest):
 
     except Exception as e:
         _logging.warning(f"[semantic search] error: {e}")
-        return _ilike_fallback(query_text, body.type, body.chercheur, body.page, body.limit)
+        return _ilike_fallback(query_text, body.type, body.chercheur, body.page, body.limit, body.year_from, body.year_to)
 
 
 # ── Admin: generate embeddings for all publications ───────────────────────────
@@ -2643,3 +2663,7 @@ def ai_suggestions(body: AISuggestionsRequest, user: dict = Depends(get_current_
         "journals":      journals,
         "collaborators": collaborators[:6],
     }
+
+# ── Radar Scientifique routes ─────────────────────────────────────────────────
+from .radar_endpoints import register_radar_routes
+register_radar_routes(app, query)
