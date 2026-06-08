@@ -4,7 +4,7 @@ import {
   Users, BookOpen, Globe, Award, TrendingUp, Target, Lightbulb,
   LogIn, UserPlus, ChevronRight, Mail, Phone, MapPin,
   GraduationCap, Handshake, Menu, X, ExternalLink, Calendar, FlaskConical, Clock,
-  Building2, User, Radio,
+  Building2, User,
 } from "lucide-react";
 import drapeau from "../../imports/drapeau.png";
 import isg from "../../imports/isg.png";
@@ -354,39 +354,6 @@ export function AccueilLarodec() {
                 {item.label}
               </button>
             ))}
-            
-            {/* PulsAR — avec description au hover */}
-            <button onClick={() => navigate("/radar")}
-              className="group relative"
-              style={{ padding:"0 16px", height:scrolled?52:56, fontSize:14, fontWeight:600, background:"none", border:"none", borderBottom:`2px solid transparent`, cursor:"pointer", display:"flex", alignItems:"center", gap:6, transition:"all 150ms" }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderBottom=`2px solid ${C.primary}`; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderBottom="2px solid transparent"; }}>
-              <Radio size={18} style={{ color:C.primary }} />
-              <span style={{ color:C.textMain }}>PulsAR</span>
-              {/* Point pulsant */}
-              <span className="relative flex h-2 w-2 flex-shrink-0">
-                <span className="absolute inline-flex h-full w-full rounded-full" style={{ background:C.primary, animation:"pulse-green 1.5s ease-in-out infinite", opacity:0.75 }} />
-                <span className="relative inline-flex rounded-full h-2 w-2" style={{ background:C.primary }} />
-              </span>
-              {/* Tooltip descriptif */}
-              <span
-                className="absolute top-full left-1/2 mt-2 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none"
-                style={{
-                  transform: "translateX(-50%)",
-                  background: "#1E293B",
-                  color: "white",
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                  fontSize: 11,
-                  fontWeight: 500,
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
-                  transition: "opacity 0.2s ease",
-                  zIndex: 100,
-                }}
-              >
-                Veille Scientifique IA • Dernières publications
-              </span>
-            </button>
           </div>
 
           {/* Right actions */}
@@ -434,13 +401,6 @@ export function AccueilLarodec() {
                 {item.label}
               </button>
             ))}
-            {/* PulsAR mobile */}
-            <button onClick={() => navigate("/radar")} className="w-full text-left" 
-              style={{ padding:"12px 24px", fontSize:14, color:C.textMain, fontWeight:600, background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:8 }}>
-              <Radio size={18} style={{ color:C.primary }} />
-              <span>PulsAR</span>
-              <span style={{ fontSize:11, color:C.textSec, marginLeft:"auto" }}>Veille IA</span>
-            </button>
             <div style={{ display:"flex", gap:8, padding:"12px 16px", borderTop:`1px solid ${C.borderGray}`, alignItems:"center" }}>
               <LangSwitcher />
               <button onClick={() => navigate("/login")} style={{ flex:1, padding:"8px", fontSize:13, textAlign:"center", color:C.primary, borderRadius:8, background:C.lightBg, border:"none", fontWeight:600, cursor:"pointer" }}>{t.nav.connexion}</button>
@@ -533,74 +493,6 @@ export function AccueilLarodec() {
           </div>
         </div>
       </section>
-
-      {/* ── Bouton flottant PulsAR ── */}
-      <button
-        onClick={() => navigate("/radar")}
-        className="fixed bottom-6 right-6 z-50 group"
-        style={{
-          width: 56,
-          height: 56,
-          borderRadius: "50%",
-          background: "linear-gradient(135deg, #1A73E8, #0EA5E9)",
-          border: "none",
-          cursor: "pointer",
-          boxShadow: "0 4px 16px rgba(26,115,232,0.4)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          transition: "all 0.3s ease",
-        }}
-        onMouseEnter={e => {
-          (e.currentTarget as HTMLElement).style.transform = "scale(1.1)";
-          (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 24px rgba(26,115,232,0.6)";
-        }}
-        onMouseLeave={e => {
-          (e.currentTarget as HTMLElement).style.transform = "scale(1)";
-          (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 16px rgba(26,115,232,0.4)";
-        }}
-      >
-        <Radio size={24} color="white" />
-        {/* Point pulsant vert */}
-        <span
-          className="absolute top-1 right-1"
-          style={{
-            width: 10,
-            height: 10,
-            borderRadius: "50%",
-            background: "#22C55E",
-            border: "2px solid white",
-            animation: "pulse-green 1.5s ease-in-out infinite",
-          }}
-        />
-        {/* Tooltip au hover */}
-        <span
-          className="absolute right-full mr-3 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none"
-          style={{
-            background: "#1E293B",
-            color: "white",
-            padding: "8px 12px",
-            borderRadius: 8,
-            fontSize: 12,
-            fontWeight: 600,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
-            transition: "opacity 0.2s ease",
-          }}
-        >
-          PulsAR — Veille Scientifique
-          <span
-            className="absolute right-0 top-1/2"
-            style={{
-              width: 0,
-              height: 0,
-              borderTop: "5px solid transparent",
-              borderBottom: "5px solid transparent",
-              borderLeft: "5px solid #1E293B",
-              transform: "translate(5px, -50%)",
-            }}
-          />
-        </span>
-      </button>
 
       {/* ── Section Thématiques pleine largeur ── */}
       <section id="themes" className="py-16 px-6" style={{ background:C.pageBg, position:"relative" }}>

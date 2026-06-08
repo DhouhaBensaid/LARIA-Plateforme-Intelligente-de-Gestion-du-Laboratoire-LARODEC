@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 LARODEC FastAPI Backend
 Wraps the existing scrapers and exposes a REST API for the frontend.
@@ -1460,16 +1460,6 @@ def get_audit(_: dict = Depends(require_admin)):
     """)
 
 
-@app.get("/api/public/events")
-def get_public_events():
-    """Public endpoint — upcoming/recent validated events, no auth required."""
-    events = query("""
-        SELECT * FROM larodec_evenements
-        WHERE statut = 'valide'
-        ORDER BY date DESC
-        LIMIT 6
-    """)
-    return events
 
 
 @app.get("/api/public/stats")
@@ -2664,6 +2654,3 @@ def ai_suggestions(body: AISuggestionsRequest, user: dict = Depends(get_current_
         "collaborators": collaborators[:6],
     }
 
-# ── Radar Scientifique routes ─────────────────────────────────────────────────
-from .radar_endpoints import register_radar_routes
-register_radar_routes(app, query)

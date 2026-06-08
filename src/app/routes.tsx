@@ -21,7 +21,6 @@ import { MesTheses } from "./components/MesTheses";
 import { EvenementDetail } from "./components/EvenementDetail";
 import { PublicationsPage } from "./components/PublicationsPage";
 import { CvChercheur } from "./components/CvChercheur";
-import { RadarScientifique } from "./components/RadarScientifique";
 
 export const router = createBrowserRouter([
   {
@@ -35,10 +34,6 @@ export const router = createBrowserRouter([
   {
     path: "/publications",
     Component: PublicationsPage,
-  },
-  {
-    path: "/radar",
-    Component: RadarScientifique,
   },
   {
     path: "/public/researcher/:nomPrenom",
